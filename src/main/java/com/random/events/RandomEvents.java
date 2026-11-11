@@ -12,8 +12,7 @@ import net.minecraftforge.fml.common.Mod;
 
 import java.util.Random;
 
-@Mod("randomevents")
-public class RandomEvents {
+Mod("randomevents")
 
     public static final String MOD_ID = "randomevents";
     private static final Random RANDOM = new Random();

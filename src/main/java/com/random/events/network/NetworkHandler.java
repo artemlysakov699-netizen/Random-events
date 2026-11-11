@@ -1,26 +1,28 @@
+
 package com.random.events.network;
 
 import com.random.events.RandomEvents;
+import com.random.events.client.ClientTimer;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.network.NetworkRegistry;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.event.network.CustomPayloadEvent;
+import net.minecraftforge.fml.DistExecutor;
+import net.minecraftforge.network.ChannelBuilder;
 import net.minecraftforge.network.PacketDistributor;
-import net.minecraftforge.network.simple.SimpleChannel;
+import net.minecraftforge.network.SimpleChannel;
 
 public final class NetworkHandler {
 
-    private static final String PROTOCOL_VERSION = "1";
-
     public static final SimpleChannel CHANNEL =
-            NetworkRegistry.newSimpleChannel(
+            ChannelBuilder.named(
                     ResourceLocation.fromNamespaceAndPath(
                             RandomEvents.MOD_ID,
                             "main"
-                    ),
-                    () -> PROTOCOL_VERSION,
-                    PROTOCOL_VERSION::equals,
-                    PROTOCOL_VERSION::equals
-            );
+                    )
+            )
+            .networkProtocolVersion(1)
+            .simpleChannel();
 
     private static boolean registered = false;
 
@@ -32,18 +34,26 @@ public final class NetworkHandler {
             return;
         }
 
-        CHANNEL.registerMessage(
-                0,
-                TimerSyncPacket.class,
-                TimerSyncPacket::encode,
-                TimerSyncPacket::decode,
-                TimerSyncPacket::handle
-        );
+        CHANNEL.messageBuilder(TimerSyncPacket.class, 0)
+                .encoder(TimerSyncPacket::encode)
+                .decoder(TimerSyncPacket::decode)
+                .consumerMainThread((packet, context) ->
+                        DistExecutor.unsafeRunWhenOn(
+                                Dist.CLIENT,
+                                () -> () -> ClientTimer.setRemainingTicks(
+                                        packet.getRemainingTicks()
+                                )
+                        )
+                )
+                .add();
 
         registered = true;
     }
 
-    public static void sendTimer(ServerPlayer player, int remainingTicks) {
+    public static void sendTimer(
+            ServerPlayer player,
+            int remainingTicks
+    ) {
         CHANNEL.send(
                 PacketDistributor.PLAYER.with(player),
                 new TimerSyncPacket(remainingTicks)

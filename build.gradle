@@ -1,23 +1,28 @@
+
 plugins {
     id 'java'
     id 'net.minecraftforge.gradle' version '[6.0,6.2)'
 }
 
-group = 'com.random.events'
+group = 'com.random'
 version = '0.2.0'
 
 base {
     archivesName = 'RandomEvents'
 }
 
-java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
 
 minecraft {
     mappings channel: 'official', version: '1.21.1'
 }
 
 dependencies {
-    minecraft minecraft 'net.minecraftforge:forge:1.21.1-52.1.2'
+    minecraft 'net.minecraftforge:forge:1.21.1-52.1.2'
 }
 
 tasks.withType(JavaCompile).configureEach {

@@ -28,7 +28,7 @@ public class RandomEvents {
     private static final String NEXT_EVENT = "RandomEventsNextEvent";
 
     public RandomEvents() {
-        System.out.println("[Random Events] Version 0.2.1 loaded!");
+        System.out.println("[Random Events] Version 0.2.2 loaded!");
     }
 
     // SERVER EVENTS
@@ -70,7 +70,6 @@ public class RandomEvents {
 
             if (time >= data.getLong(NEXT_EVENT)) {
                 triggerRandomEvent(player);
-
                 data.putLong(NEXT_EVENT, time + 1200);
             }
         }
@@ -84,7 +83,6 @@ public class RandomEvents {
                     player.addEffect(new MobEffectInstance(
                         MobEffects.MOVEMENT_SPEED, 300, 1
                     ));
-
                     player.sendSystemMessage(Component.literal(
                         "§a[Random Events] Сверхскорость!"
                     ));
@@ -94,7 +92,6 @@ public class RandomEvents {
                     player.addEffect(new MobEffectInstance(
                         MobEffects.JUMP, 300, 1
                     ));
-
                     player.sendSystemMessage(Component.literal(
                         "§a[Random Events] Прыгучесть!"
                     ));
@@ -104,7 +101,6 @@ public class RandomEvents {
                     player.addEffect(new MobEffectInstance(
                         MobEffects.REGENERATION, 200, 1
                     ));
-
                     player.sendSystemMessage(Component.literal(
                         "§a[Random Events] Восстановление!"
                     ));
@@ -114,7 +110,6 @@ public class RandomEvents {
                     player.addEffect(new MobEffectInstance(
                         MobEffects.WEAKNESS, 300, 0
                     ));
-
                     player.sendSystemMessage(Component.literal(
                         "§c[Random Events] Слабость!"
                     ));
@@ -124,7 +119,6 @@ public class RandomEvents {
                     player.addEffect(new MobEffectInstance(
                         MobEffects.MOVEMENT_SLOWDOWN, 300, 1
                     ));
-
                     player.sendSystemMessage(Component.literal(
                         "§c[Random Events] Замедление!"
                     ));
@@ -134,14 +128,13 @@ public class RandomEvents {
                     player.addEffect(new MobEffectInstance(
                         MobEffects.HUNGER, 300, 1
                     ));
-
                     player.sendSystemMessage(Component.literal(
                         "§c[Random Events] Внезапный голод!"
                     ));
                 }
 
                 case 6 -> {
-                    // CHICKEN AIRDROP
+                    // CHICKEN AIRDROP: 20 BLOCKS ABOVE PLAYER
                     for (int i = 0; i < 5; i++) {
 
                         Chicken chicken = EntityType.CHICKEN.create(
@@ -149,12 +142,8 @@ public class RandomEvents {
                         );
 
                         if (chicken != null) {
-
-                            double offsetX =
-                                RANDOM.nextInt(7) - 3;
-
-                            double offsetZ =
-                                RANDOM.nextInt(7) - 3;
+                            double offsetX = RANDOM.nextInt(7) - 3;
+                            double offsetZ = RANDOM.nextInt(7) - 3;
 
                             chicken.moveTo(
                                 player.getX() + offsetX,
@@ -164,9 +153,7 @@ public class RandomEvents {
                                 0
                             );
 
-                            player.serverLevel().addFreshEntity(
-                                chicken
-                            );
+                            player.serverLevel().addFreshEntity(chicken);
                         }
                     }
 
@@ -193,7 +180,6 @@ public class RandomEvents {
         public static void addHudLayer(
             AddGuiOverlayLayersEvent event
         ) {
-
             event.getLayeredDraw().add(
                 ResourceLocation.fromNamespaceAndPath(
                     MOD_ID,
@@ -230,12 +216,12 @@ public class RandomEvents {
                     int rest = seconds % 60;
 
                     String timer = String.format(
-                        "Следующее событие: %02d:%02d",
+                        "RANDOM EVENTS | Следующее событие: %02d:%02d",
                         minutes,
                         rest
                     );
 
-                    // LEFT TOP CORNER
+                    // FIXED LEFT TOP POSITION
                     int x = 8;
                     int y = 8;
 

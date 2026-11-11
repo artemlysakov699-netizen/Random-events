@@ -28,7 +28,7 @@ public class RandomEvents {
     private static final String NEXT_EVENT = "RandomEventsNextEvent";
 
     public RandomEvents() {
-        System.out.println("[Random Events] Version 0.2.0 loaded!");
+        System.out.println("[Random Events] Version 0.2.1 loaded!");
     }
 
     // SERVER EVENTS
@@ -82,9 +82,7 @@ public class RandomEvents {
 
                 case 0 -> {
                     player.addEffect(new MobEffectInstance(
-                        MobEffects.MOVEMENT_SPEED,
-                        300,
-                        1
+                        MobEffects.MOVEMENT_SPEED, 300, 1
                     ));
 
                     player.sendSystemMessage(Component.literal(
@@ -94,9 +92,7 @@ public class RandomEvents {
 
                 case 1 -> {
                     player.addEffect(new MobEffectInstance(
-                        MobEffects.JUMP,
-                        300,
-                        1
+                        MobEffects.JUMP, 300, 1
                     ));
 
                     player.sendSystemMessage(Component.literal(
@@ -106,9 +102,7 @@ public class RandomEvents {
 
                 case 2 -> {
                     player.addEffect(new MobEffectInstance(
-                        MobEffects.REGENERATION,
-                        200,
-                        1
+                        MobEffects.REGENERATION, 200, 1
                     ));
 
                     player.sendSystemMessage(Component.literal(
@@ -118,9 +112,7 @@ public class RandomEvents {
 
                 case 3 -> {
                     player.addEffect(new MobEffectInstance(
-                        MobEffects.WEAKNESS,
-                        300,
-                        0
+                        MobEffects.WEAKNESS, 300, 0
                     ));
 
                     player.sendSystemMessage(Component.literal(
@@ -130,9 +122,7 @@ public class RandomEvents {
 
                 case 4 -> {
                     player.addEffect(new MobEffectInstance(
-                        MobEffects.MOVEMENT_SLOWDOWN,
-                        300,
-                        1
+                        MobEffects.MOVEMENT_SLOWDOWN, 300, 1
                     ));
 
                     player.sendSystemMessage(Component.literal(
@@ -142,9 +132,7 @@ public class RandomEvents {
 
                 case 5 -> {
                     player.addEffect(new MobEffectInstance(
-                        MobEffects.HUNGER,
-                        300,
-                        1
+                        MobEffects.HUNGER, 300, 1
                     ));
 
                     player.sendSystemMessage(Component.literal(
@@ -170,7 +158,7 @@ public class RandomEvents {
 
                             chicken.moveTo(
                                 player.getX() + offsetX,
-                                player.getY() + 10,
+                                player.getY() + 20,
                                 player.getZ() + offsetZ,
                                 RANDOM.nextFloat() * 360,
                                 0
@@ -222,7 +210,6 @@ public class RandomEvents {
 
                     long gameTime = mc.level.getGameTime();
 
-                    // Reset timer when entering another world
                     if (lastLevel != mc.level) {
                         lastLevel = mc.level;
                         nextEventTime = gameTime + 1200;
@@ -248,15 +235,15 @@ public class RandomEvents {
                         rest
                     );
 
-                    int x =
-                        mc.getWindow().getGuiScaledWidth()
-                        - mc.font.width(timer) - 8;
+                    // LEFT TOP CORNER
+                    int x = 8;
+                    int y = 8;
 
                     guiGraphics.drawString(
                         mc.font,
                         timer,
                         x,
-                        8,
+                        y,
                         0xFFFFFF,
                         true
                     );

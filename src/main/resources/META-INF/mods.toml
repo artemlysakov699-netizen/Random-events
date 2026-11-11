@@ -1,0 +1,14 @@
+
+modLoader="javafml"
+loaderVersion="[52,)"
+license="MIT"
+
+[[mods]]
+modId="randomevents"
+version="0.1.0"
+displayName="Random Events"
+authors="Artem"
+description='''
+Random Events: индивидуальные случайные события
+для каждого игрока Minecraft.
+'''

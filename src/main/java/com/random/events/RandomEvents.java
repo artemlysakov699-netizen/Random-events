@@ -1,240 +1,273 @@
-
 package com.random.events;
 
-import net.minecraft.client.Minecraft;
+import com.random.events.network.NetworkHandler;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.animal.Chicken;
 
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.AddGuiOverlayLayersEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
+import java.util.List;
 import java.util.Random;
+import java.util.function.Consumer;
 
-@Mod("randomevents")
+@Mod(RandomEvents.MOD_ID)
 public class RandomEvents {
 
     public static final String MOD_ID = "randomevents";
 
+    private static final String TIMER_KEY = "RandomEventsRemainingTicks";
+    private static final int EVENT_INTERVAL = 1200;
     private static final Random RANDOM = new Random();
-    private static final String NEXT_EVENT = "RandomEventsNextEvent";
+
+    private static final List<RandomEvent> EVENTS = List.of(
+
+            new RandomEvent(
+                    "Сверхскорость",
+                    Rarity.COMMON,
+                    25,
+                    player -> player.addEffect(
+                            new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 300, 1)
+                    )
+            ),
+
+            new RandomEvent(
+                    "Прыгучесть",
+                    Rarity.COMMON,
+                    22,
+                    player -> player.addEffect(
+                            new MobEffectInstance(MobEffects.JUMP, 300, 1)
+                    )
+            ),
+
+            new RandomEvent(
+                    "Восстановление",
+                    Rarity.RARE,
+                    12,
+                    player -> player.addEffect(
+                            new MobEffectInstance(MobEffects.REGENERATION, 200, 1)
+                    )
+            ),
+
+            new RandomEvent(
+                    "Слабость",
+                    Rarity.UNCOMMON,
+                    22,
+                    player -> player.addEffect(
+                            new MobEffectInstance(MobEffects.WEAKNESS, 300, 0)
+                    )
+            ),
+
+            new RandomEvent(
+                    "Замедление",
+                    Rarity.UNCOMMON,
+                    22,
+                    player -> player.addEffect(
+                            new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 300, 1)
+                    )
+            ),
+
+            new RandomEvent(
+                    "Внезапный голод",
+                    Rarity.UNCOMMON,
+                    14,
+                    player -> player.addEffect(
+                            new MobEffectInstance(MobEffects.HUNGER, 300, 1)
+                    )
+            ),
+
+            new RandomEvent(
+                    "Куриный десант",
+                    Rarity.EPIC,
+                    5,
+                    RandomEvents::spawnChickenRain
+            )
+    );
 
     public RandomEvents() {
-        System.out.println("[Random Events] Version 0.2.2 loaded!");
+        NetworkHandler.register();
+        System.out.println("[Random Events] Version 1.0.0 initialized!");
     }
 
-    // SERVER EVENTS
+    private enum Rarity {
+        COMMON("Обычное"),
+        UNCOMMON("Необычное"),
+        RARE("Редкое"),
+        EPIC("Эпическое"),
+        LEGENDARY("Легендарное");
+
+        private final String displayName;
+
+        Rarity(String displayName) {
+            this.displayName = displayName;
+        }
+    }
+
+    private record RandomEvent(
+            String name,
+            Rarity rarity,
+            int weight,
+            Consumer<ServerPlayer> action
+    ) {
+    }
+
     @Mod.EventBusSubscriber(
-        modid = MOD_ID,
-        bus = Mod.EventBusSubscriber.Bus.FORGE
+            modid = MOD_ID,
+            bus = Mod.EventBusSubscriber.Bus.FORGE
     )
-    public static class Events {
+    public static class ServerEvents {
 
         @SubscribeEvent
-        public static void onPlayerLogin(
-            PlayerEvent.PlayerLoggedInEvent event
-        ) {
-            if (event.getEntity() instanceof ServerPlayer player) {
-                long time = player.serverLevel().getGameTime();
-
-                player.getPersistentData().putLong(
-                    NEXT_EVENT,
-                    time + 1200
-                );
+        public static void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
+            if (!(event.getEntity() instanceof ServerPlayer player)) {
+                return;
             }
+
+            var data = player.getPersistentData();
+
+            if (!data.contains(TIMER_KEY)) {
+                data.putInt(TIMER_KEY, EVENT_INTERVAL);
+            }
+
+            syncTimer(player);
         }
 
         @SubscribeEvent
-        public static void onPlayerTick(
-            TickEvent.PlayerTickEvent.Post event
-        ) {
+        public static void onPlayerTick(TickEvent.PlayerTickEvent.Post event) {
             if (!(event.player instanceof ServerPlayer player)) {
                 return;
             }
 
-            long time = player.serverLevel().getGameTime();
             var data = player.getPersistentData();
 
-            if (!data.contains(NEXT_EVENT)) {
-                data.putLong(NEXT_EVENT, time + 1200);
-                return;
+            if (!data.contains(TIMER_KEY)) {
+                data.putInt(TIMER_KEY, EVENT_INTERVAL);
             }
 
-            if (time >= data.getLong(NEXT_EVENT)) {
+            int remaining = data.getInt(TIMER_KEY);
+
+            if (remaining > 0) {
+                remaining--;
+                data.putInt(TIMER_KEY, remaining);
+            }
+
+            if (remaining <= 0) {
                 triggerRandomEvent(player);
-                data.putLong(NEXT_EVENT, time + 1200);
+                data.putInt(TIMER_KEY, EVENT_INTERVAL);
+            }
+
+            if (player.tickCount % 20 == 0) {
+                syncTimer(player);
             }
         }
 
-        private static void triggerRandomEvent(
-            ServerPlayer player
+        @SubscribeEvent
+        public static void onPlayerClone(PlayerEvent.Clone event) {
+            var oldData = event.getOriginal().getPersistentData();
+            var newData = event.getEntity().getPersistentData();
+
+            if (oldData.contains(TIMER_KEY)) {
+                newData.putInt(TIMER_KEY, oldData.getInt(TIMER_KEY));
+            }
+        }
+
+        @SubscribeEvent
+        public static void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
+            if (event.getEntity() instanceof ServerPlayer player) {
+                syncTimer(player);
+            }
+        }
+
+        @SubscribeEvent
+        public static void onDimensionChange(
+                PlayerEvent.PlayerChangedDimensionEvent event
         ) {
-            switch (RANDOM.nextInt(7)) {
-
-                case 0 -> {
-                    player.addEffect(new MobEffectInstance(
-                        MobEffects.MOVEMENT_SPEED, 300, 1
-                    ));
-                    player.sendSystemMessage(Component.literal(
-                        "§a[Random Events] Сверхскорость!"
-                    ));
-                }
-
-                case 1 -> {
-                    player.addEffect(new MobEffectInstance(
-                        MobEffects.JUMP, 300, 1
-                    ));
-                    player.sendSystemMessage(Component.literal(
-                        "§a[Random Events] Прыгучесть!"
-                    ));
-                }
-
-                case 2 -> {
-                    player.addEffect(new MobEffectInstance(
-                        MobEffects.REGENERATION, 200, 1
-                    ));
-                    player.sendSystemMessage(Component.literal(
-                        "§a[Random Events] Восстановление!"
-                    ));
-                }
-
-                case 3 -> {
-                    player.addEffect(new MobEffectInstance(
-                        MobEffects.WEAKNESS, 300, 0
-                    ));
-                    player.sendSystemMessage(Component.literal(
-                        "§c[Random Events] Слабость!"
-                    ));
-                }
-
-                case 4 -> {
-                    player.addEffect(new MobEffectInstance(
-                        MobEffects.MOVEMENT_SLOWDOWN, 300, 1
-                    ));
-                    player.sendSystemMessage(Component.literal(
-                        "§c[Random Events] Замедление!"
-                    ));
-                }
-
-                case 5 -> {
-                    player.addEffect(new MobEffectInstance(
-                        MobEffects.HUNGER, 300, 1
-                    ));
-                    player.sendSystemMessage(Component.literal(
-                        "§c[Random Events] Внезапный голод!"
-                    ));
-                }
-
-                case 6 -> {
-                    // CHICKEN AIRDROP: 20 BLOCKS ABOVE PLAYER
-                    for (int i = 0; i < 5; i++) {
-
-                        Chicken chicken = EntityType.CHICKEN.create(
-                            player.serverLevel()
-                        );
-
-                        if (chicken != null) {
-                            double offsetX = RANDOM.nextInt(7) - 3;
-                            double offsetZ = RANDOM.nextInt(7) - 3;
-
-                            chicken.moveTo(
-                                player.getX() + offsetX,
-                                player.getY() + 20,
-                                player.getZ() + offsetZ,
-                                RANDOM.nextFloat() * 360,
-                                0
-                            );
-
-                            player.serverLevel().addFreshEntity(chicken);
-                        }
-                    }
-
-                    player.sendSystemMessage(Component.literal(
-                        "§e[Random Events] КУРИНЫЙ ДЕСАНТ!"
-                    ));
-                }
+            if (event.getEntity() instanceof ServerPlayer player) {
+                syncTimer(player);
             }
         }
     }
 
-    // CLIENT HUD
-    @Mod.EventBusSubscriber(
-        modid = MOD_ID,
-        value = Dist.CLIENT,
-        bus = Mod.EventBusSubscriber.Bus.MOD
-    )
-    public static class ClientEvents {
+    private static void syncTimer(ServerPlayer player) {
+        int remaining = player.getPersistentData().getInt(TIMER_KEY);
 
-        private static Object lastLevel = null;
-        private static long nextEventTime = -1;
+        NetworkHandler.sendTimer(player, Math.max(0, remaining));
+    }
 
-        @SubscribeEvent
-        public static void addHudLayer(
-            AddGuiOverlayLayersEvent event
-        ) {
-            event.getLayeredDraw().add(
-                ResourceLocation.fromNamespaceAndPath(
-                    MOD_ID,
-                    "event_timer"
-                ),
+    private static void triggerRandomEvent(ServerPlayer player) {
+        RandomEvent selected = selectRandomEvent();
 
-                (guiGraphics, deltaTracker) -> {
+        selected.action().accept(player);
 
-                    Minecraft mc = Minecraft.getInstance();
+        String message =
+                "§6[Random Events] §f"
+                        + selected.name()
+                        + " §7("
+                        + selected.rarity().displayName
+                        + ")";
 
-                    if (mc.player == null || mc.level == null) {
-                        return;
-                    }
+        player.sendSystemMessage(Component.literal(message));
 
-                    long gameTime = mc.level.getGameTime();
+        System.out.println(
+                "[Random Events] Event started for "
+                        + player.getGameProfile().getName()
+                        + ": "
+                        + selected.name()
+        );
+    }
 
-                    if (lastLevel != mc.level) {
-                        lastLevel = mc.level;
-                        nextEventTime = gameTime + 1200;
-                    }
+    private static RandomEvent selectRandomEvent() {
+        int totalWeight = EVENTS.stream()
+                .mapToInt(RandomEvent::weight)
+                .sum();
 
-                    long remaining = nextEventTime - gameTime;
+        int randomValue = RANDOM.nextInt(totalWeight);
 
-                    if (remaining <= 0) {
-                        nextEventTime = gameTime + 1200;
-                        remaining = 1200;
-                    }
+        for (RandomEvent event : EVENTS) {
+            randomValue -= event.weight();
 
-                    int seconds = (int) Math.ceil(
-                        remaining / 20.0
-                    );
+            if (randomValue < 0) {
+                return event;
+            }
+        }
 
-                    int minutes = seconds / 60;
-                    int rest = seconds % 60;
+        return EVENTS.get(0);
+    }
 
-                    String timer = String.format(
-                        "RANDOM EVENTS | Следующее событие: %02d:%02d",
-                        minutes,
-                        rest
-                    );
+    private static void spawnChickenRain(ServerPlayer player) {
+        ServerLevel level = player.serverLevel();
 
-                    // FIXED LEFT TOP POSITION
-                    int x = 8;
-                    int y = 8;
+        double spawnY = Math.min(
+                player.getY() + 20,
+                level.getMaxBuildHeight() - 2
+        );
 
-                    guiGraphics.drawString(
-                        mc.font,
-                        timer,
-                        x,
-                        y,
-                        0xFFFFFF,
-                        true
-                    );
-                }
+        for (int i = 0; i < 5; i++) {
+            Chicken chicken = EntityType.CHICKEN.create(level);
+
+            if (chicken == null) {
+                continue;
+            }
+
+            double offsetX = RANDOM.nextInt(7) - 3;
+            double offsetZ = RANDOM.nextInt(7) - 3;
+
+            chicken.moveTo(
+                    player.getX() + offsetX,
+                    spawnY,
+                    player.getZ() + offsetZ,
+                    RANDOM.nextFloat() * 360.0F,
+                    0.0F
             );
+
+            level.addFreshEntity(chicken);
         }
     }
 }

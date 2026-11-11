@@ -63,7 +63,7 @@ public class RandomEvents {
 
                 case 1 -> {
                     player.addEffect(new MobEffectInstance(
-                        MobEffects.JUMP_BOOST, 300, 1));
+                        MobEffects.JUMP, 300, 1));
                     player.sendSystemMessage(
                         net.minecraft.network.chat.Component.literal(
                             "§a[Random Events] Прыгучесть!"

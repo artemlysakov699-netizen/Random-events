@@ -5,7 +5,7 @@ license="MIT"
 
 [[mods]]
 modId="randomevents"
-version="0.2.0"
+version="0.2.1"
 displayName="Random Events"
 authors="Artem"
 description='''

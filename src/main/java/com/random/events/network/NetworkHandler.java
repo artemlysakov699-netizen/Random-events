@@ -6,7 +6,6 @@ import com.random.events.client.ClientTimer;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.event.network.CustomPayloadEvent;
 import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.ChannelBuilder;
 import net.minecraftforge.network.PacketDistributor;
@@ -55,8 +54,8 @@ public final class NetworkHandler {
             int remainingTicks
     ) {
         CHANNEL.send(
-                PacketDistributor.PLAYER.with(player),
-                new TimerSyncPacket(remainingTicks)
+                new TimerSyncPacket(remainingTicks),
+                PacketDistributor.PLAYER.with(player)
         );
     }
 }

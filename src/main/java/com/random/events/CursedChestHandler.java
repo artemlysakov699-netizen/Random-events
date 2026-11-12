@@ -14,15 +14,16 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
 
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
+import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -39,12 +40,11 @@ public final class CursedChestHandler {
     }
 
     /**
-     * Создаёт проклятый сундук рядом с инициатором события.
+     * Создаёт проклятый сундук рядом с инициатором.
      */
     public static boolean start(ServerPlayer player) {
         ServerLevel level = player.serverLevel();
 
-        // Не допускаем два проклятых сундука от одного события.
         remove(player);
 
         BlockPos pos = findSafePosition(player, level);
@@ -99,7 +99,7 @@ public final class CursedChestHandler {
     }
 
     /**
-     * Проверяет, существует ли ещё не открытый сундук события.
+     * Проверяет, существует ли ещё сундук.
      */
     public static boolean isActive(ServerPlayer player) {
         ChestData data = CHESTS.get(player.getUUID());
@@ -109,11 +109,18 @@ public final class CursedChestHandler {
         }
 
         if (!data.level.hasChunkAt(data.pos)) {
-            CHESTS.remove(player.getUUID());
             return false;
         }
 
-        return data.level.getBlockState(data.pos).is(Blocks.CHEST);
+        boolean exists = data.level
+                .getBlockState(data.pos)
+                .is(Blocks.CHEST);
+
+        if (!exists) {
+            CHESTS.remove(player.getUUID());
+        }
+
+        return exists;
     }
 
     /**
@@ -134,9 +141,7 @@ public final class CursedChestHandler {
     }
 
     /**
-     * Обрабатывает открытие проклятого сундука.
-     * Запись удаляется до выдачи награды или взрыва,
-     * поэтому повторно открыть его и получить награду нельзя.
+     * Обработка взаимодействия с проклятым сундуком.
      */
     @Mod.EventBusSubscriber(
             modid = RandomEvents.MOD_ID,
@@ -175,11 +180,10 @@ public final class CursedChestHandler {
                 return;
             }
 
-            // Не даём обычному GUI сундука открыться.
+            // Запрещаем открытие обычного интерфейса сундука.
             event.setCanceled(true);
 
-            // Удаляем запись до любого действия:
-            // повторное нажатие уже не сможет повторить результат.
+            // Сразу удаляем регистрацию, исключая повторное срабатывание.
             CHESTS.remove(ownerId);
 
             ServerLevel level = matched.level;
@@ -196,12 +200,35 @@ public final class CursedChestHandler {
                 giveReward(player, level, pos);
             }
         }
+
+        /**
+         * Удаляет регистрацию, если игрок сломал сундук.
+         * Сам блок удаляется обычным игровым действием.
+         */
+        @SubscribeEvent
+        public static void onBlockBreak(BlockEvent.BreakEvent event) {
+            if (!(event.getLevel() instanceof ServerLevel level)) {
+                return;
+            }
+
+            Iterator<Map.Entry<UUID, ChestData>> iterator =
+                    CHESTS.entrySet().iterator();
+
+            while (iterator.hasNext()) {
+                Map.Entry<UUID, ChestData> entry = iterator.next();
+                ChestData data = entry.getValue();
+
+                if (data.level.dimension().equals(level.dimension())
+                        && data.pos.equals(event.getPos())) {
+                    iterator.remove();
+                    return;
+                }
+            }
+        }
     }
 
     /**
-     * Ловушка: взрыв и принудительная смерть открывшего игрока.
-     * Прямой вызов die используется для обхода обычной
-     * проверки тотема при получении смертельного урона.
+     * Ловушка: взрыв и гарантированная смерть открывшего игрока.
      */
     private static void triggerTrap(
             ServerPlayer player,
@@ -224,6 +251,17 @@ public final class CursedChestHandler {
                 0.08
         );
 
+        /*
+         * Прямой вызов die() обходит обычный путь
+         * получения смертельного урона, в котором
+         * срабатывает тотем бессмертия.
+         */
+        if (player.isAlive()) {
+            player.setHealth(0.0F);
+            player.die(level.damageSources().genericKill());
+        }
+
+        // Взрыв происходит после принудительной смерти инициатора.
         level.explode(
                 player,
                 pos.getX() + 0.5,
@@ -232,15 +270,10 @@ public final class CursedChestHandler {
                 5.0F,
                 Level.ExplosionInteraction.TNT
         );
-
-        if (player.isAlive()) {
-            player.setHealth(0.0F);
-            player.die(level.damageSources().genericKill());
-        }
     }
 
     /**
-     * Награда: от 1 до 8 случайных ценных предметов.
+     * Выдаёт от 1 до 8 случайных ценных предметов.
      */
     private static void giveReward(
             ServerPlayer player,
@@ -286,27 +319,49 @@ public final class CursedChestHandler {
         );
     }
 
+    /**
+     * Список возможной добычи.
+     */
     private static List<ItemStack> createLoot() {
         List<ItemStack> loot = new ArrayList<>();
 
-        loot.add(new ItemStack(Items.DIAMOND, 3 + RANDOM.nextInt(6)));
+        loot.add(new ItemStack(
+                Items.DIAMOND,
+                3 + RANDOM.nextInt(6)
+        ));
+
         loot.add(new ItemStack(Items.NETHERITE_INGOT, 1));
         loot.add(new ItemStack(Items.ENCHANTED_GOLDEN_APPLE, 1));
         loot.add(new ItemStack(Items.TOTEM_OF_UNDYING, 1));
         loot.add(new ItemStack(Items.ELYTRA, 1));
         loot.add(new ItemStack(Items.NETHERITE_SWORD, 1));
         loot.add(new ItemStack(Items.NETHERITE_CHESTPLATE, 1));
-        loot.add(new ItemStack(Items.DIAMOND_BLOCK, 1 + RANDOM.nextInt(3)));
-        loot.add(new ItemStack(Items.GOLDEN_APPLE, 2 + RANDOM.nextInt(5)));
-        loot.add(new ItemStack(Items.EMERALD_BLOCK, 2 + RANDOM.nextInt(5)));
-        loot.add(new ItemStack(Items.EXPERIENCE_BOTTLE, 16 + RANDOM.nextInt(17)));
+
+        loot.add(new ItemStack(
+                Items.DIAMOND_BLOCK,
+                1 + RANDOM.nextInt(3)
+        ));
+
+        loot.add(new ItemStack(
+                Items.GOLDEN_APPLE,
+                2 + RANDOM.nextInt(5)
+        ));
+
+        loot.add(new ItemStack(
+                Items.EMERALD_BLOCK,
+                2 + RANDOM.nextInt(5)
+        ));
+
+        loot.add(new ItemStack(
+                Items.EXPERIENCE_BOTTLE,
+                16 + RANDOM.nextInt(17)
+        ));
 
         return loot;
     }
 
     /**
-     * Ищет свободное место на поверхности.
-     * Не заменяет существующие блоки и контейнеры.
+     * Ищет безопасное место на поверхности.
      */
     private static BlockPos findSafePosition(
             ServerPlayer player,

@@ -3,6 +3,7 @@ package com.random.events;
 
 import com.random.events.EventDefinition.EventType;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -21,7 +22,11 @@ import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.entity.monster.warden.Warden;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraftforge.event.level.ExplosionEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -34,93 +39,58 @@ public final class EventEffectHandler {
 
     private static final Random RANDOM = new Random();
 
-    /*
-     * Игрок -> ID события -> созданные существа.
-     */
+    private static final String EVENT_CREEPER_TAG =
+            "RandomEventsProtectedCreeper";
+
     private static final Map<UUID, Map<String, List<Entity>>> TRACKED_ENTITIES =
             new HashMap<>();
 
-    private EventEffectHandler() {
-    }
+    private EventEffectHandler() {}
 
-    /**
-     * Запускает игровую механику события.
-     */
-    public static void start(
-            ServerPlayer player,
-            EventDefinition definition
-    ) {
-
+    public static void start(ServerPlayer player, EventDefinition definition) {
         ServerLevel level = player.serverLevel();
 
         switch (definition.type()) {
-
-            case SUPER_SPEED -> player.addEffect(
-                    new MobEffectInstance(
+            case SUPER_SPEED ->
+                    player.addEffect(new MobEffectInstance(
                             MobEffects.MOVEMENT_SPEED,
-                            definition.durationTicks(),
-                            1
-                    )
-            );
+                            definition.durationTicks(), 1));
 
-            case JUMP_BOOST -> player.addEffect(
-                    new MobEffectInstance(
+            case JUMP_BOOST ->
+                    player.addEffect(new MobEffectInstance(
                             MobEffects.JUMP,
-                            definition.durationTicks(),
-                            1
-                    )
-            );
+                            definition.durationTicks(), 1));
 
-            case REGENERATION -> player.addEffect(
-                    new MobEffectInstance(
+            case REGENERATION ->
+                    player.addEffect(new MobEffectInstance(
                             MobEffects.REGENERATION,
-                            definition.durationTicks(),
-                            1
-                    )
-            );
+                            definition.durationTicks(), 1));
 
-            case WEAKNESS -> player.addEffect(
-                    new MobEffectInstance(
+            case WEAKNESS ->
+                    player.addEffect(new MobEffectInstance(
                             MobEffects.WEAKNESS,
-                            definition.durationTicks(),
-                            0
-                    )
-            );
+                            definition.durationTicks(), 0));
 
-            case SLOWNESS -> player.addEffect(
-                    new MobEffectInstance(
+            case SLOWNESS ->
+                    player.addEffect(new MobEffectInstance(
                             MobEffects.MOVEMENT_SLOWDOWN,
-                            definition.durationTicks(),
-                            1
-                    )
-            );
+                            definition.durationTicks(), 1));
 
-            case HUNGER -> player.addEffect(
-                    new MobEffectInstance(
+            case HUNGER ->
+                    player.addEffect(new MobEffectInstance(
                             MobEffects.HUNGER,
-                            definition.durationTicks(),
-                            1
-                    )
-            );
+                            definition.durationTicks(), 1));
 
             case BLESSING -> {
                 player.addEffect(new MobEffectInstance(
                         MobEffects.REGENERATION,
-                        definition.durationTicks(),
-                        1
-                ));
-
+                        definition.durationTicks(), 1));
                 player.addEffect(new MobEffectInstance(
                         MobEffects.DAMAGE_RESISTANCE,
-                        definition.durationTicks(),
-                        0
-                ));
-
+                        definition.durationTicks(), 0));
                 player.addEffect(new MobEffectInstance(
                         MobEffects.MOVEMENT_SPEED,
-                        definition.durationTicks(),
-                        0
-                ));
+                        definition.durationTicks(), 0));
             }
 
             case ZOMBIE_HORDE ->
@@ -147,74 +117,42 @@ public final class EventEffectHandler {
             case HELPERS ->
                     spawnHelpers(player, level);
 
-            case SOLAR_BURST,
-                 DENSE_FOG,
-                 GIFT_OF_FATE,
-                 EXPERIENCE_FEVER,
-                 WATERDROP,
-                 METEOR_SHOWER,
+            case SOLAR_BURST, DENSE_FOG, GIFT_OF_FATE,
+                 EXPERIENCE_FEVER, WATERDROP, METEOR_SHOWER,
                  TRAPPED_CHEST -> {
-                // Будут подключены отдельными обработчиками.
+                // Будут подключены в следующих этапах.
             }
         }
     }
 
-    /**
-     * Обрабатывает специальные эффекты во время события.
-     */
-    public static void tick(
-            ServerPlayer player,
-            EventDefinition definition
-    ) {
-
+    public static void tick(ServerPlayer player, EventDefinition definition) {
         if (definition.type() == EventType.SOLAR_BURST) {
-
             ServerLevel level = player.serverLevel();
 
             boolean daytime = level.isDay();
-            boolean canSeeSky = level.canSeeSky(
-                    player.blockPosition()
-            );
-
+            boolean canSeeSky = level.canSeeSky(player.blockPosition());
             boolean raining = level.isRaining();
 
-            if (daytime
-                    && canSeeSky
-                    && !raining
+            if (daytime && canSeeSky && !raining
                     && player.isAlive()
-                    && !player.isInWaterRainOrBubble()) {
-
-                if (player.tickCount % 20 == 0) {
-                    player.setRemainingFireTicks(40);
-                }
+                    && !player.isInWaterRainOrBubble()
+                    && player.tickCount % 20 == 0) {
+                player.setRemainingFireTicks(40);
             }
         }
 
         if (definition.type() == EventType.WRATH_OF_SKY
                 && player.tickCount % 40 == 0) {
-
-            summonLightning(
-                    player,
-                    player.serverLevel(),
-                    definition
-            );
+            summonLightning(player, player.serverLevel(), definition);
         }
     }
 
-    /**
-     * Завершает событие и удаляет временных существ.
-     */
-    public static void end(
-            ServerPlayer player,
-            EventDefinition definition
-    ) {
-
+    public static void end(ServerPlayer player, EventDefinition definition) {
         if (definition.type() == EventType.HELPERS) {
             return;
         }
 
         UUID playerId = player.getUUID();
-
         Map<String, List<Entity>> playerEntities =
                 TRACKED_ENTITIES.get(playerId);
 
@@ -222,8 +160,7 @@ public final class EventEffectHandler {
             return;
         }
 
-        List<Entity> entities =
-                playerEntities.remove(definition.id());
+        List<Entity> entities = playerEntities.remove(definition.id());
 
         if (entities != null) {
             for (Entity entity : entities) {
@@ -238,11 +175,7 @@ public final class EventEffectHandler {
         }
     }
 
-    /**
-     * Удаляет временных существ при выходе игрока.
-     */
     public static void cleanupPlayer(ServerPlayer player) {
-
         UUID playerId = player.getUUID();
 
         Map<String, List<Entity>> playerEntities =
@@ -261,70 +194,50 @@ public final class EventEffectHandler {
         }
     }
 
-    /**
-     * Орда зомби: 10 существ.
-     */
     private static void spawnZombieHorde(
             ServerPlayer player,
             ServerLevel level,
             EventDefinition definition
     ) {
-
         for (int i = 0; i < 10; i++) {
-
             Zombie zombie = EntityType.ZOMBIE.create(level);
-
-            if (zombie == null) {
-                continue;
-            }
-
-            if (spawnNearPlayer(player, zombie, level)) {
+            if (zombie != null
+                    && spawnNearPlayer(player, zombie, level)) {
                 trackEntity(player, definition, zombie);
             }
         }
     }
 
-    /**
-     * Паучья охота: 5–7 пауков.
-     */
     private static void spawnSpiderHunt(
             ServerPlayer player,
             ServerLevel level,
             EventDefinition definition
     ) {
-
         int count = 5 + RANDOM.nextInt(3);
 
         for (int i = 0; i < count; i++) {
-
             Spider spider = EntityType.SPIDER.create(level);
-
-            if (spider == null) {
-                continue;
-            }
-
-            if (spawnNearPlayer(player, spider, level)) {
+            if (spider != null
+                    && spawnNearPlayer(player, spider, level)) {
                 trackEntity(player, definition, spider);
             }
         }
     }
 
-    /**
-     * Криперская засада: три крипера.
-     */
     private static void spawnCreepers(
             ServerPlayer player,
             ServerLevel level,
             EventDefinition definition
     ) {
-
         for (int i = 0; i < 3; i++) {
-
             Creeper creeper = EntityType.CREEPER.create(level);
 
             if (creeper == null) {
                 continue;
             }
+
+            creeper.getPersistentData().putBoolean(
+                    EVENT_CREEPER_TAG, true);
 
             if (spawnNearPlayer(player, creeper, level)) {
                 trackEntity(player, definition, creeper);
@@ -332,37 +245,27 @@ public final class EventEffectHandler {
         }
     }
 
-    /**
-     * Куриный десант.
-     */
     private static void spawnChickenRain(
             ServerPlayer player,
             ServerLevel level,
             EventDefinition definition
     ) {
-
         for (int i = 0; i < 5; i++) {
-
             Chicken chicken = EntityType.CHICKEN.create(level);
-
             if (chicken == null) {
                 continue;
             }
 
             double x = player.getX() + RANDOM.nextInt(7) - 3;
             double z = player.getZ() + RANDOM.nextInt(7) - 3;
-
             double y = Math.min(
                     player.getY() + 20,
                     level.getMaxBuildHeight() - 2
             );
 
             chicken.moveTo(
-                    x,
-                    y,
-                    z,
-                    RANDOM.nextFloat() * 360.0F,
-                    0.0F
+                    x, y, z,
+                    RANDOM.nextFloat() * 360.0F, 0.0F
             );
 
             if (level.addFreshEntity(chicken)) {
@@ -371,22 +274,17 @@ public final class EventEffectHandler {
         }
     }
 
-    /**
-     * Молнии рядом с игроком.
-     */
     private static void summonLightning(
             ServerPlayer player,
             ServerLevel level,
             EventDefinition definition
     ) {
-
         double x = player.getX() + RANDOM.nextInt(13) - 6;
         double z = player.getZ() + RANDOM.nextInt(13) - 6;
 
         int y = level.getHeight(
                 Heightmap.Types.MOTION_BLOCKING,
-                (int) x,
-                (int) z
+                (int) x, (int) z
         );
 
         LightningBolt lightning =
@@ -403,45 +301,31 @@ public final class EventEffectHandler {
         }
     }
 
-    /**
-     * Хранитель появляется рядом с игроком.
-     */
     private static void spawnWarden(
             ServerPlayer player,
             ServerLevel level,
             EventDefinition definition
     ) {
-
         Warden warden = EntityType.WARDEN.create(level);
 
-        if (warden == null) {
-            return;
-        }
-
-        if (spawnNearPlayer(player, warden, level)) {
+        if (warden != null
+                && spawnNearPlayer(player, warden, level)) {
             trackEntity(player, definition, warden);
         }
     }
 
-    /**
-     * Зомби-босс: 100 HP и алмазная броня.
-     */
     private static void spawnZombieBoss(
             ServerPlayer player,
             ServerLevel level,
             EventDefinition definition
     ) {
-
         Zombie zombie = EntityType.ZOMBIE.create(level);
 
         if (zombie == null) {
             return;
         }
 
-        zombie.setCustomName(
-                Component.literal("Зомби-босс")
-        );
-
+        zombie.setCustomName(Component.literal("Зомби-босс"));
         zombie.setCustomNameVisible(true);
 
         if (zombie.getAttribute(Attributes.MAX_HEALTH) != null) {
@@ -453,23 +337,16 @@ public final class EventEffectHandler {
 
         zombie.setItemSlot(
                 EquipmentSlot.HEAD,
-                new ItemStack(Items.DIAMOND_HELMET)
-        );
-
+                new ItemStack(Items.DIAMOND_HELMET));
         zombie.setItemSlot(
                 EquipmentSlot.CHEST,
-                new ItemStack(Items.DIAMOND_CHESTPLATE)
-        );
-
+                new ItemStack(Items.DIAMOND_CHESTPLATE));
         zombie.setItemSlot(
                 EquipmentSlot.LEGS,
-                new ItemStack(Items.DIAMOND_LEGGINGS)
-        );
-
+                new ItemStack(Items.DIAMOND_LEGGINGS));
         zombie.setItemSlot(
                 EquipmentSlot.FEET,
-                new ItemStack(Items.DIAMOND_BOOTS)
-        );
+                new ItemStack(Items.DIAMOND_BOOTS));
 
         zombie.setDropChance(EquipmentSlot.HEAD, 0.0F);
         zombie.setDropChance(EquipmentSlot.CHEST, 0.0F);
@@ -481,85 +358,130 @@ public final class EventEffectHandler {
         }
     }
 
-    /**
-     * Пять настоящих прирученных волков.
-     * Они остаются после завершения события.
-     */
     private static void spawnHelpers(
             ServerPlayer player,
             ServerLevel level
     ) {
-
         for (int i = 0; i < 5; i++) {
-
             Wolf wolf = EntityType.WOLF.create(level);
 
-            if (wolf == null) {
-                continue;
-            }
-
-            if (!spawnNearPlayer(player, wolf, level)) {
+            if (wolf == null
+                    || !spawnNearPlayer(player, wolf, level)) {
                 continue;
             }
 
             wolf.tame(player);
             wolf.setOrderedToSit(false);
-
-            wolf.setCustomName(
-                    Component.literal("Помощник")
-            );
-
+            wolf.setCustomName(Component.literal("Помощник"));
             wolf.setCustomNameVisible(true);
         }
     }
 
     /**
-     * Размещение существа рядом с игроком.
+     * Ищет безопасную точку на поверхности.
+     * Максимум 12 попыток, чтобы не создавать бесконечный цикл.
      */
     private static boolean spawnNearPlayer(
             ServerPlayer player,
             Entity entity,
             ServerLevel level
     ) {
+        for (int attempt = 0; attempt < 12; attempt++) {
+            int offsetX = RANDOM.nextInt(11) - 5;
+            int offsetZ = RANDOM.nextInt(11) - 5;
 
-        double x = player.getX() + RANDOM.nextInt(11) - 5;
-        double z = player.getZ() + RANDOM.nextInt(11) - 5;
+            int blockX = player.blockPosition().getX() + offsetX;
+            int blockZ = player.blockPosition().getZ() + offsetZ;
 
-        int y = level.getHeight(
-                Heightmap.Types.MOTION_BLOCKING,
-                (int) x,
-                (int) z
-        );
+            int y = level.getHeight(
+                    Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                    blockX, blockZ
+            );
 
-        entity.moveTo(
-                x,
-                y,
-                z,
-                RANDOM.nextFloat() * 360.0F,
-                0.0F
-        );
+            BlockPos feetPos = new BlockPos(blockX, y, blockZ);
+            BlockPos belowPos = feetPos.below();
+            BlockPos headPos = feetPos.above();
 
-        return level.addFreshEntity(entity);
+            if (y <= level.getMinBuildHeight()
+                    || y >= level.getMaxBuildHeight() - 2) {
+                continue;
+            }
+
+            BlockState floor = level.getBlockState(belowPos);
+            BlockState feet = level.getBlockState(feetPos);
+            BlockState head = level.getBlockState(headPos);
+
+            if (!floor.isFaceSturdy(
+                    level, belowPos, net.minecraft.core.Direction.UP)) {
+                continue;
+            }
+
+            if (!feet.isAir() || !head.isAir()) {
+                continue;
+            }
+
+            if (!level.getFluidState(feetPos).isEmpty()
+                    || !level.getFluidState(headPos).isEmpty()) {
+                continue;
+            }
+
+            double x = blockX + 0.5;
+            double z = blockZ + 0.5;
+
+            entity.moveTo(
+                    x, y, z,
+                    RANDOM.nextFloat() * 360.0F,
+                    0.0F
+            );
+
+            if (!level.noCollision(entity)) {
+                continue;
+            }
+
+            return level.addFreshEntity(entity);
+        }
+
+        return false;
     }
 
-    /**
-     * Сохраняет ссылку на созданное существо.
-     */
     private static void trackEntity(
             ServerPlayer player,
             EventDefinition definition,
             Entity entity
     ) {
-
         TRACKED_ENTITIES
                 .computeIfAbsent(
                         player.getUUID(),
-                        id -> new HashMap<>()
-                )
+                        id -> new HashMap<>())
                 .computeIfAbsent(
                         definition.id(),
-                        id -> new ArrayList<>()
-                )
+                        id -> new ArrayList<>())
                 .add(entity);
+    }
+
+    /**
+     * Защита построек только от криперов события.
+     * Урон игрокам и существам от взрыва сохраняется.
+     */
+    @Mod.EventBusSubscriber(
+            modid = RandomEvents.MOD_ID,
+            bus = Mod.EventBusSubscriber.Bus.FORGE
+    )
+    public static class ExplosionProtection {
+
+        @SubscribeEvent
+        public static void onExplosion(ExplosionEvent.Detonate event) {
+            Entity source = event.getExplosion()
+                    .getDirectSourceEntity();
+
+            if (!(source instanceof Creeper creeper)) {
+                return;
+            }
+
+            if (creeper.getPersistentData().getBoolean(
+                    EVENT_CREEPER_TAG)) {
+                event.getAffectedBlocks().clear();
+            }
+        }
     }
 }

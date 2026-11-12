@@ -1,12 +1,9 @@
-
 package com.random.events;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
-import net.minecraft.network.chat.TextColor;
 import net.minecraft.server.level.ServerPlayer;
-
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -20,13 +17,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
 
-@Mod.EventBusSubscriber(
-        modid = RandomEvents.MOD_ID,
-        bus = Mod.EventBusSubscriber.Bus.FORGE
-)
 public final class ActiveEventManager {
-
-    private static final Random RANDOM = new Random();
 
     private static final Map<UUID, List<ActiveEvent>> ACTIVE_EVENTS =
             new HashMap<>();
@@ -34,299 +25,287 @@ public final class ActiveEventManager {
     private static final Map<UUID, String> LAST_EVENT =
             new HashMap<>();
 
+    private static final Random RANDOM = new Random();
+
     private static final double COMBINATION_CHANCE = 0.20;
 
-    private ActiveEventManager() {
-    }
+    private ActiveEventManager() {}
 
-    /**
-     * Запускает случайное событие для игрока.
-     */
     public static void startRandomEvents(ServerPlayer player) {
+        List<EventDefinition> allEvents = EventRegistry.getAll();
+
+        if (allEvents.isEmpty()) {
+            return;
+        }
 
         UUID playerId = player.getUUID();
+        String lastEvent = LAST_EVENT.get(playerId);
 
-        List<EventDefinition> availableEvents =
-                EventRegistry.getAll();
+        EventDefinition first = selectWeighted(allEvents, lastEvent);
 
-        if (availableEvents.isEmpty()) {
+        if (first == null) {
             return;
         }
 
-        String lastEventId = LAST_EVENT.get(playerId);
-
-        EventDefinition firstEvent = selectWeighted(
-                availableEvents,
-                lastEventId
-        );
-
-        if (firstEvent == null) {
-            return;
+        if (startEvent(player, first)) {
+            LAST_EVENT.put(playerId, first.id());
         }
 
-        startEvent(player, firstEvent);
-
-        LAST_EVENT.put(playerId, firstEvent.id());
-
-        /*
-         * Иногда запускается второе совместимое событие.
-         */
-        if (firstEvent.canCombine()
+        if (first.canCombine()
                 && RANDOM.nextDouble() < COMBINATION_CHANCE) {
 
-            List<EventDefinition> compatibleEvents =
-                    availableEvents.stream()
-                            .filter(EventDefinition::canCombine)
-                            .filter(event ->
-                                    !event.id().equals(firstEvent.id())
-                            )
-                            .toList();
+            String excluded = LAST_EVENT.get(playerId);
 
-            EventDefinition secondEvent = selectWeighted(
-                    compatibleEvents,
-                    LAST_EVENT.get(playerId)
-            );
+            List<EventDefinition> compatible = new ArrayList<>();
 
-            if (secondEvent != null) {
-                startEvent(player, secondEvent);
-                LAST_EVENT.put(playerId, secondEvent.id());
+            for (EventDefinition definition : allEvents) {
+                if (!definition.id().equals(excluded)
+                        && definition.canCombine()) {
+                    compatible.add(definition);
+                }
+            }
+
+            EventDefinition second = selectWeighted(compatible, excluded);
+
+            if (second != null && startEvent(player, second)) {
+                LAST_EVENT.put(playerId, second.id());
             }
         }
     }
 
-    /**
-     * Запускает конкретное событие.
-     */
-    public static void startEvent(
+    private static boolean startEvent(
             ServerPlayer player,
             EventDefinition definition
     ) {
-
         UUID playerId = player.getUUID();
 
-        List<ActiveEvent> playerEvents =
-                ACTIVE_EVENTS.computeIfAbsent(
-                        playerId,
-                        id -> new ArrayList<>()
-                );
-
-        boolean alreadyActive = playerEvents.stream()
-                .anyMatch(active ->
-                        active.definition.id().equals(definition.id())
-                );
-
-        if (alreadyActive) {
-            return;
-        }
-
-        ActiveEvent activeEvent = new ActiveEvent(
-                definition,
-                definition.durationTicks()
+        List<ActiveEvent> events = ACTIVE_EVENTS.computeIfAbsent(
+                playerId,
+                id -> new ArrayList<>()
         );
 
-        playerEvents.add(activeEvent);
-
-        sendStartMessage(player, definition);
-
-        System.out.println(
-                "[Random Events] Started: "
-                        + definition.name()
-                        + " for "
-                        + player.getGameProfile().getName()
-        );
-    }
-
-    /**
-     * Обрабатывает активные события игрока.
-     */
-    public static void tickPlayer(ServerPlayer player) {
-
-        UUID playerId = player.getUUID();
-
-        List<ActiveEvent> playerEvents =
-                ACTIVE_EVENTS.get(playerId);
-
-        if (playerEvents == null || playerEvents.isEmpty()) {
-            return;
-        }
-
-        Iterator<ActiveEvent> iterator =
-                playerEvents.iterator();
-
-        while (iterator.hasNext()) {
-
-            ActiveEvent activeEvent = iterator.next();
-
-            activeEvent.remainingTicks--;
-
-            if (activeEvent.remainingTicks <= 0) {
-
-                sendEndMessage(
-                        player,
-                        activeEvent.definition
-                );
-
-                System.out.println(
-                        "[Random Events] Finished: "
-                                + activeEvent.definition.name()
-                                + " for "
-                                + player.getGameProfile().getName()
-                );
-
-                iterator.remove();
+        for (ActiveEvent active : events) {
+            if (active.definition.id().equals(definition.id())) {
+                return false;
             }
         }
 
-        if (playerEvents.isEmpty()) {
+        try {
+            EventEffectHandler.start(player, definition);
+
+            events.add(new ActiveEvent(
+                    definition,
+                    definition.durationTicks()
+            ));
+
+            sendStartMessage(player, definition);
+            return true;
+
+        } catch (RuntimeException exception) {
+            EventEffectHandler.end(player, definition);
+
+            System.err.println(
+                    "[Random Events] Не удалось запустить событие: "
+                            + definition.id()
+            );
+
+            exception.printStackTrace();
+
+            player.sendSystemMessage(
+                    Component.literal(
+                            "§c[Random Events] Не удалось запустить событие."
+                    )
+            );
+
+            if (events.isEmpty()) {
+                ACTIVE_EVENTS.remove(playerId);
+            }
+
+            return false;
+        }
+    }
+
+    private static void tickPlayer(ServerPlayer player) {
+        UUID playerId = player.getUUID();
+
+        List<ActiveEvent> events = ACTIVE_EVENTS.get(playerId);
+
+        if (events == null || events.isEmpty()) {
+            return;
+        }
+
+        Iterator<ActiveEvent> iterator = events.iterator();
+
+        while (iterator.hasNext()) {
+            ActiveEvent active = iterator.next();
+
+            try {
+                EventEffectHandler.tick(
+                        player,
+                        active.definition
+                );
+
+                active.remainingTicks--;
+
+                if (active.remainingTicks <= 0) {
+                    EventEffectHandler.end(
+                            player,
+                            active.definition
+                    );
+
+                    sendEndMessage(player, active.definition);
+
+                    iterator.remove();
+                }
+
+            } catch (RuntimeException exception) {
+                System.err.println(
+                        "[Random Events] Ошибка во время события: "
+                                + active.definition.id()
+                );
+
+                exception.printStackTrace();
+
+                EventEffectHandler.end(
+                        player,
+                        active.definition
+                );
+
+                iterator.remove();
+
+                player.sendSystemMessage(
+                        Component.literal(
+                                "§c[Random Events] Событие было остановлено из-за ошибки."
+                        )
+                );
+            }
+        }
+
+        if (events.isEmpty()) {
             ACTIVE_EVENTS.remove(playerId);
         }
     }
 
-    /**
-     * Завершает все активные события игрока.
-     */
     public static void endAllEvents(ServerPlayer player) {
-
         UUID playerId = player.getUUID();
 
-        List<ActiveEvent> playerEvents =
-                ACTIVE_EVENTS.remove(playerId);
+        List<ActiveEvent> events = ACTIVE_EVENTS.remove(playerId);
 
-        if (playerEvents == null) {
+        if (events == null || events.isEmpty()) {
             return;
         }
 
-        for (ActiveEvent activeEvent : playerEvents) {
+        for (ActiveEvent active : events) {
+            try {
+                EventEffectHandler.end(
+                        player,
+                        active.definition
+                );
 
-            sendEndMessage(
-                    player,
-                    activeEvent.definition
-            );
+                sendEndMessage(player, active.definition);
+
+            } catch (RuntimeException exception) {
+                System.err.println(
+                        "[Random Events] Ошибка завершения события: "
+                                + active.definition.id()
+                );
+
+                exception.printStackTrace();
+            }
         }
     }
 
-    /**
-     * Возвращает список активных событий игрока.
-     */
-    public static List<EventDefinition> getActiveEvents(
-            UUID playerId
-    ) {
+    public static List<EventDefinition> getActiveEvents(ServerPlayer player) {
+        List<ActiveEvent> events = ACTIVE_EVENTS.get(player.getUUID());
 
-        List<ActiveEvent> playerEvents =
-                ACTIVE_EVENTS.get(playerId);
-
-        if (playerEvents == null) {
+        if (events == null) {
             return List.of();
         }
 
-        return playerEvents.stream()
-                .map(active -> active.definition)
-                .toList();
+        List<EventDefinition> result = new ArrayList<>();
+
+        for (ActiveEvent active : events) {
+            result.add(active.definition);
+        }
+
+        return result;
     }
 
-    /**
-     * Возвращает оставшееся время события.
-     */
     public static int getRemainingTicks(
-            UUID playerId,
+            ServerPlayer player,
             String eventId
     ) {
+        List<ActiveEvent> events = ACTIVE_EVENTS.get(player.getUUID());
 
-        List<ActiveEvent> playerEvents =
-                ACTIVE_EVENTS.get(playerId);
-
-        if (playerEvents == null) {
+        if (events == null) {
             return 0;
         }
 
-        for (ActiveEvent activeEvent : playerEvents) {
-
-            if (activeEvent.definition.id().equals(eventId)) {
-                return Math.max(0, activeEvent.remainingTicks);
+        for (ActiveEvent active : events) {
+            if (active.definition.id().equals(eventId)) {
+                return active.remainingTicks;
             }
         }
 
         return 0;
     }
 
-    /**
-     * Выбирает событие с учётом веса редкости и самого события.
-     */
     private static EventDefinition selectWeighted(
             List<EventDefinition> events,
             String excludedId
     ) {
-
-        List<EventDefinition> candidates = events.stream()
-                .filter(event ->
-                        excludedId == null
-                                || !event.id().equals(excludedId)
-                )
-                .toList();
-
-        if (candidates.isEmpty()) {
-            candidates = events;
-        }
-
-        if (candidates.isEmpty()) {
-            return null;
-        }
-
         long totalWeight = 0;
 
-        for (EventDefinition event : candidates) {
+        for (EventDefinition definition : events) {
+            if (definition.id().equals(excludedId)) {
+                continue;
+            }
 
-            totalWeight +=
-                    (long) event.weight()
-                            * event.rarity().getWeight();
+            totalWeight += (long) definition.weight()
+                    * definition.rarity().getWeight();
         }
 
         if (totalWeight <= 0) {
-            return candidates.get(0);
+            return null;
         }
 
         long randomValue = RANDOM.nextLong(totalWeight);
 
-        for (EventDefinition event : candidates) {
+        for (EventDefinition definition : events) {
+            if (definition.id().equals(excludedId)) {
+                continue;
+            }
 
-            long currentWeight =
-                    (long) event.weight()
-                            * event.rarity().getWeight();
+            long weight = (long) definition.weight()
+                    * definition.rarity().getWeight();
 
-            randomValue -= currentWeight;
+            randomValue -= weight;
 
             if (randomValue < 0) {
-                return event;
+                return definition;
             }
         }
 
-        return candidates.get(0);
+        return null;
     }
 
-    /**
-     * Уведомление о запуске события.
-     */
     private static void sendStartMessage(
             ServerPlayer player,
             EventDefinition definition
     ) {
-
         Component prefix = Component.literal("[Random Events] ")
                 .withStyle(ChatFormatting.GOLD);
 
         Component eventName = Component.literal(definition.name())
                 .withStyle(
                         Style.EMPTY.withColor(
-                                TextColor.fromRgb(
-                                        definition.rarity().getColor()
-                                )
+                                definition.rarity().getColor()
                         )
                 );
 
         Component rarity = Component.literal(
-                        " (" + definition.rarity().getDisplayName() + ")"
-                )
-                .withStyle(ChatFormatting.GRAY);
+                " (" + definition.rarity().getDisplayName() + ")"
+        ).withStyle(ChatFormatting.GRAY);
 
         player.sendSystemMessage(
                 prefix.copy()
@@ -335,66 +314,26 @@ public final class ActiveEventManager {
         );
     }
 
-    /**
-     * Уведомление о завершении события.
-     */
     private static void sendEndMessage(
             ServerPlayer player,
             EventDefinition definition
     ) {
+        Component prefix = Component.literal(
+                "[Random Events] Событие завершено: "
+        ).withStyle(ChatFormatting.GOLD);
 
-        Component message = Component.literal(
-                        "[Random Events] Событие завершено: "
-                )
-                .withStyle(ChatFormatting.GRAY)
-                .append(
-                        Component.literal(definition.name())
-                                .withStyle(
-                                        Style.EMPTY.withColor(
-                                                TextColor.fromRgb(
-                                                        definition.rarity().getColor()
-                                                )
-                                        )
-                                )
+        Component eventName = Component.literal(definition.name())
+                .withStyle(
+                        Style.EMPTY.withColor(
+                                definition.rarity().getColor()
+                        )
                 );
 
-        player.sendSystemMessage(message);
+        player.sendSystemMessage(
+                prefix.copy().append(eventName)
+        );
     }
 
-    /**
-     * Обработка активных событий.
-     */
-    @SubscribeEvent
-    public static void onPlayerTick(
-            TickEvent.PlayerTickEvent.Post event
-    ) {
-
-        if (!(event.player instanceof ServerPlayer player)) {
-            return;
-        }
-
-        tickPlayer(player);
-    }
-
-    /**
-     * Очистка данных при выходе игрока.
-     */
-    @SubscribeEvent
-    public static void onPlayerLogout(
-            PlayerEvent.PlayerLoggedOutEvent event
-    ) {
-
-        if (!(event.getEntity() instanceof ServerPlayer player)) {
-            return;
-        }
-
-        endAllEvents(player);
-        LAST_EVENT.remove(player.getUUID());
-    }
-
-    /**
-     * Внутреннее состояние одного активного события.
-     */
     private static final class ActiveEvent {
 
         private final EventDefinition definition;
@@ -404,9 +343,39 @@ public final class ActiveEventManager {
                 EventDefinition definition,
                 int remainingTicks
         ) {
-
             this.definition = definition;
             this.remainingTicks = remainingTicks;
         }
     }
-}
+
+    @Mod.EventBusSubscriber(
+            modid = RandomEvents.MOD_ID,
+            bus = Mod.EventBusSubscriber.Bus.FORGE
+    )
+    public static class ServerEvents {
+
+        @SubscribeEvent
+        public static void onPlayerTick(TickEvent.PlayerTickEvent.Post event) {
+            if (!(event.player instanceof ServerPlayer player)) {
+                return;
+            }
+
+            tickPlayer(player);
+        }
+
+        @SubscribeEvent
+        public static void onPlayerLogout(
+                PlayerEvent.PlayerLoggedOutEvent event
+        ) {
+            if (!(event.getEntity() instanceof ServerPlayer player)) {
+                return;
+            }
+
+            endAllEvents(player);
+
+            EventEffectHandler.cleanupPlayer(player);
+
+            LAST_EVENT.remove(player.getUUID());
+        }
+    }
+                }

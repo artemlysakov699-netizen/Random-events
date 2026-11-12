@@ -1,4 +1,3 @@
-
 package com.random.events;
 
 import com.random.events.network.NetworkHandler;
@@ -9,6 +8,7 @@ import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
+@Mod(RandomEvents.MOD_ID)
 public class RandomEvents {
 
     public static final String MOD_ID = "randomevents";
@@ -199,4 +199,4 @@ public class RandomEvents {
             );
         }
     }
-}
+                    }

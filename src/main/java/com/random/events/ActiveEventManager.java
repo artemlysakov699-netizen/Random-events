@@ -13,12 +13,10 @@ import net.minecraftforge.fml.common.Mod;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.Set;
 import java.util.UUID;
 
 public final class ActiveEventManager {
@@ -35,6 +33,10 @@ public final class ActiveEventManager {
 
     private ActiveEventManager() {
     }
+
+    // =====================================================
+    // СЛУЧАЙНЫЙ ВЫБОР СОБЫТИЙ
+    // =====================================================
 
     public static void startRandomEvents(ServerPlayer player) {
         List<EventDefinition> allEvents = EventRegistry.getAll();
@@ -82,6 +84,10 @@ public final class ActiveEventManager {
         }
     }
 
+    // =====================================================
+    // ЗАПУСК СОБЫТИЯ ПО ID
+    // =====================================================
+
     public static boolean startEventById(
             ServerPlayer player,
             String eventId
@@ -112,6 +118,10 @@ public final class ActiveEventManager {
 
         return started;
     }
+
+    // =====================================================
+    // ЗАПУСК СОБЫТИЯ
+    // =====================================================
 
     private static boolean startEvent(
             ServerPlayer player,
@@ -147,12 +157,14 @@ public final class ActiveEventManager {
             return true;
 
         } catch (RuntimeException exception) {
+
             try {
                 if (isNewEvent(definition)) {
                     NewEventHandler.end(player, definition);
                 } else {
                     EventEffectHandler.end(player, definition);
                 }
+
             } catch (RuntimeException cleanupException) {
                 cleanupException.printStackTrace();
             }
@@ -178,6 +190,10 @@ public final class ActiveEventManager {
         }
     }
 
+    // =====================================================
+    // ОБНОВЛЕНИЕ СОБЫТИЙ ИГРОКА
+    // =====================================================
+
     private static void tickPlayer(ServerPlayer player) {
         UUID playerId = player.getUUID();
 
@@ -190,10 +206,13 @@ public final class ActiveEventManager {
         Iterator<ActiveEvent> iterator = events.iterator();
 
         while (iterator.hasNext()) {
+
             ActiveEvent active = iterator.next();
             EventDefinition definition = active.definition;
 
             try {
+
+                // Сначала обновляем механику события.
                 if (isNewEvent(definition)) {
                     NewEventHandler.tick(player, definition);
                 } else {
@@ -202,21 +221,24 @@ public final class ActiveEventManager {
 
                 boolean finished = false;
 
+                // Отсчёт времени.
                 if (definition.hasTimeLimit()) {
                     active.remainingTicks--;
 
                     finished = active.remainingTicks <= 0;
                 }
 
-                if (isNewEvent(definition)
-                        && NewEventHandler.isFinished(
-                                player,
-                                definition
-                        )) {
-                    finished = true;
+                // Проверка событий, которые завершаются
+                // после смерти существ или выполнения условия.
+                if (!finished && isNewEvent(definition)) {
+                    finished = NewEventHandler.isFinished(
+                            player,
+                            definition
+                    );
                 }
 
                 if (finished) {
+
                     endEvent(player, definition);
 
                     sendEndMessage(player, definition);
@@ -225,6 +247,7 @@ public final class ActiveEventManager {
                 }
 
             } catch (RuntimeException exception) {
+
                 System.err.println(
                         "[Random Events] Ошибка во время события: "
                                 + definition.id()
@@ -234,6 +257,7 @@ public final class ActiveEventManager {
 
                 try {
                     endEvent(player, definition);
+
                 } catch (RuntimeException cleanupException) {
                     cleanupException.printStackTrace();
                 }
@@ -253,6 +277,10 @@ public final class ActiveEventManager {
         }
     }
 
+    // =====================================================
+    // ЗАВЕРШЕНИЕ ОДНОГО СОБЫТИЯ
+    // =====================================================
+
     private static void endEvent(
             ServerPlayer player,
             EventDefinition definition
@@ -264,8 +292,15 @@ public final class ActiveEventManager {
         }
     }
 
-    private static boolean isNewEvent(EventDefinition definition) {
+    // =====================================================
+    // ОПРЕДЕЛЕНИЕ НОВЫХ СОБЫТИЙ
+    // =====================================================
+
+    private static boolean isNewEvent(
+            EventDefinition definition
+    ) {
         return switch (definition.type()) {
+
             case PILLAGER_AMBUSH,
                  RAVAGER_WRATH,
                  SLIME_EPIDEMIC,
@@ -279,6 +314,10 @@ public final class ActiveEventManager {
         };
     }
 
+    // =====================================================
+    // ПРИНУДИТЕЛЬНОЕ ЗАВЕРШЕНИЕ ВСЕХ СОБЫТИЙ
+    // =====================================================
+
     public static void endAllEvents(ServerPlayer player) {
         UUID playerId = player.getUUID();
 
@@ -289,6 +328,7 @@ public final class ActiveEventManager {
         }
 
         for (ActiveEvent active : events) {
+
             try {
                 endEvent(player, active.definition);
 
@@ -298,6 +338,7 @@ public final class ActiveEventManager {
                 );
 
             } catch (RuntimeException exception) {
+
                 System.err.println(
                         "[Random Events] Ошибка завершения события: "
                                 + active.definition.id()
@@ -307,6 +348,55 @@ public final class ActiveEventManager {
             }
         }
     }
+
+    // =====================================================
+    // ОЧИСТКА ПРИ ВЫХОДЕ ИГРОКА
+    // =====================================================
+
+    private static void handlePlayerLogout(ServerPlayer player) {
+        UUID playerId = player.getUUID();
+
+        List<ActiveEvent> events = ACTIVE_EVENTS.remove(playerId);
+
+        if (events != null) {
+
+            for (ActiveEvent active : events) {
+
+                EventDefinition definition = active.definition;
+
+                /*
+                 * Старые события корректно завершаются.
+                 */
+                if (!isNewEvent(definition)) {
+                    try {
+                        EventEffectHandler.end(
+                                player,
+                                definition
+                        );
+
+                    } catch (RuntimeException exception) {
+                        exception.printStackTrace();
+                    }
+                }
+            }
+        }
+
+        /*
+         * Новые события не завершаем принудительно.
+         *
+         * Это позволяет оставить их существ в мире.
+         * Специальные временные объекты, например проклятый
+         * сундук, удаляются в cleanupPlayer().
+         */
+        EventEffectHandler.cleanupPlayer(player);
+        NewEventHandler.cleanupPlayer(player);
+
+        LAST_EVENT.remove(playerId);
+    }
+
+    // =====================================================
+    // ПОЛУЧЕНИЕ АКТИВНЫХ СОБЫТИЙ
+    // =====================================================
 
     public static List<EventDefinition> getActiveEvents(
             ServerPlayer player
@@ -327,6 +417,10 @@ public final class ActiveEventManager {
 
         return result;
     }
+
+    // =====================================================
+    // ОСТАВШЕЕСЯ ВРЕМЯ
+    // =====================================================
 
     public static int getRemainingTicks(
             ServerPlayer player,
@@ -349,6 +443,10 @@ public final class ActiveEventManager {
         return 0;
     }
 
+    // =====================================================
+    // ВЗВЕШЕННЫЙ ВЫБОР СОБЫТИЯ
+    // =====================================================
+
     private static EventDefinition selectWeighted(
             List<EventDefinition> events,
             String excludedId
@@ -356,6 +454,7 @@ public final class ActiveEventManager {
         long totalWeight = 0;
 
         for (EventDefinition definition : events) {
+
             if (definition.id().equals(excludedId)) {
                 continue;
             }
@@ -371,6 +470,7 @@ public final class ActiveEventManager {
         long randomValue = RANDOM.nextLong(totalWeight);
 
         for (EventDefinition definition : events) {
+
             if (definition.id().equals(excludedId)) {
                 continue;
             }
@@ -387,6 +487,10 @@ public final class ActiveEventManager {
 
         return null;
     }
+
+    // =====================================================
+    // СООБЩЕНИЕ О НАЧАЛЕ
+    // =====================================================
 
     private static void sendStartMessage(
             ServerPlayer player,
@@ -413,6 +517,10 @@ public final class ActiveEventManager {
         );
     }
 
+    // =====================================================
+    // СООБЩЕНИЕ О ЗАВЕРШЕНИИ
+    // =====================================================
+
     private static void sendEndMessage(
             ServerPlayer player,
             EventDefinition definition
@@ -433,6 +541,10 @@ public final class ActiveEventManager {
         );
     }
 
+    // =====================================================
+    // ДАННЫЕ АКТИВНОГО СОБЫТИЯ
+    // =====================================================
+
     private static final class ActiveEvent {
 
         private final EventDefinition definition;
@@ -446,6 +558,10 @@ public final class ActiveEventManager {
             this.remainingTicks = remainingTicks;
         }
     }
+
+    // =====================================================
+    // СОБЫТИЯ FORGE
+    // =====================================================
 
     @Mod.EventBusSubscriber(
             modid = RandomEvents.MOD_ID,
@@ -472,12 +588,7 @@ public final class ActiveEventManager {
                 return;
             }
 
-            endAllEvents(player);
-
-            EventEffectHandler.cleanupPlayer(player);
-            NewEventHandler.cleanupPlayer(player);
-
-            LAST_EVENT.remove(player.getUUID());
+            handlePlayerLogout(player);
         }
     }
 }

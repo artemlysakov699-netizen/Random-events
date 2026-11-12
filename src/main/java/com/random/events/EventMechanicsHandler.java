@@ -1,11 +1,13 @@
 package com.random.events;
 
 import com.random.events.EventDefinition.EventType;
+import com.random.events.network.NetworkHandler;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -13,10 +15,14 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
+
 import net.minecraftforge.event.entity.living.LivingExperienceDropEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.eventbus.api.Event;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.fml.common.Mod;
 
 import java.util.HashMap;
@@ -37,13 +43,18 @@ public final class EventMechanicsHandler {
     private static final Map<UUID, Integer> METEOR_COUNTS =
             new HashMap<>();
 
-    private EventMechanicsHandler() {}
+    private static final int METEOR_INTERVAL_TICKS = 80;
+    private static final int MAX_METEORS = 30;
+
+    private EventMechanicsHandler() {
+    }
 
     public static void start(
             ServerPlayer player,
             EventDefinition definition
     ) {
         switch (definition.type()) {
+
             case GIFT_OF_FATE ->
                     createGiftChest(player);
 
@@ -56,8 +67,11 @@ public final class EventMechanicsHandler {
             case METEOR_SHOWER ->
                     METEOR_COUNTS.put(player.getUUID(), 0);
 
-            case EXPERIENCE_FEVER, DENSE_FOG -> {
-                // Эти события обрабатываются во время действия.
+            case DENSE_FOG ->
+                    NetworkHandler.sendDenseFog(player, true);
+
+            case EXPERIENCE_FEVER -> {
+                // Обрабатывается через LivingExperienceDropEvent.
             }
 
             default -> {
@@ -70,6 +84,7 @@ public final class EventMechanicsHandler {
             EventDefinition definition
     ) {
         switch (definition.type()) {
+
             case METEOR_SHOWER ->
                     tickMeteorShower(player);
 
@@ -87,6 +102,7 @@ public final class EventMechanicsHandler {
             EventDefinition definition
     ) {
         switch (definition.type()) {
+
             case WATERDROP ->
                     endWaterdrop(player);
 
@@ -96,6 +112,9 @@ public final class EventMechanicsHandler {
             case METEOR_SHOWER ->
                     METEOR_COUNTS.remove(player.getUUID());
 
+            case DENSE_FOG ->
+                    NetworkHandler.sendDenseFog(player, false);
+
             default -> {
             }
         }
@@ -104,7 +123,11 @@ public final class EventMechanicsHandler {
     public static void cleanupPlayer(ServerPlayer player) {
         endWaterdrop(player);
         removeTrap(player);
+
         METEOR_COUNTS.remove(player.getUUID());
+
+        // Не оставляем включённый эффект на клиенте.
+        NetworkHandler.sendDenseFog(player, false);
     }
 
     private static void createGiftChest(ServerPlayer player) {
@@ -114,10 +137,15 @@ public final class EventMechanicsHandler {
 
         if (pos == null) {
             player.sendSystemMessage(
-                    net.minecraft.network.chat.Component.literal(
+                    Component.literal(
                             "§c[Random Events] Не удалось найти место для сундука."
                     )
             );
+
+            System.err.println(
+                    "[Random Events] Gift of Fate: no safe chest position."
+            );
+
             return;
         }
 
@@ -131,6 +159,11 @@ public final class EventMechanicsHandler {
 
         if (!(blockEntity instanceof ChestBlockEntity chest)) {
             level.removeBlock(pos, false);
+
+            System.err.println(
+                    "[Random Events] Gift of Fate: chest block entity creation failed."
+            );
+
             return;
         }
 
@@ -149,7 +182,8 @@ public final class EventMechanicsHandler {
         int itemCount = 3 + RANDOM.nextInt(4);
 
         for (int i = 0; i < itemCount; i++) {
-            ItemStack stack = loot[RANDOM.nextInt(loot.length)].copy();
+            ItemStack stack =
+                    loot[RANDOM.nextInt(loot.length)].copy();
 
             int slot = RANDOM.nextInt(chest.getContainerSize());
 
@@ -161,9 +195,13 @@ public final class EventMechanicsHandler {
         chest.setChanged();
 
         player.sendSystemMessage(
-                net.minecraft.network.chat.Component.literal(
+                Component.literal(
                         "§6[Random Events] §eПодарок судьбы появился неподалёку!"
                 )
+        );
+
+        System.out.println(
+                "[Random Events] Gift of Fate: chest created at " + pos
         );
     }
 
@@ -205,14 +243,15 @@ public final class EventMechanicsHandler {
         player.fallDistance = 0.0F;
 
         player.sendSystemMessage(
-                net.minecraft.network.chat.Component.literal(
+                Component.literal(
                         "§b[Random Events] Ватердроп! Используй ведро воды, чтобы спастись!"
                 )
         );
     }
 
     private static void endWaterdrop(ServerPlayer player) {
-        WaterdropData data = WATERDROPS.remove(player.getUUID());
+        WaterdropData data =
+                WATERDROPS.remove(player.getUUID());
 
         if (data == null) {
             return;
@@ -237,15 +276,53 @@ public final class EventMechanicsHandler {
     private static void createTrap(ServerPlayer player) {
         ServerLevel level = player.serverLevel();
 
+        if (TRAPS.containsKey(player.getUUID())) {
+            System.err.println(
+                    "[Random Events] Trapped Chest: player already has a trap."
+            );
+
+            return;
+        }
+
         BlockPos chestPos = findSafePosition(player, level);
 
         if (chestPos == null) {
+            player.sendSystemMessage(
+                    Component.literal(
+                            "§c[Random Events] Не удалось создать сундук-обманку."
+                    )
+            );
+
+            System.err.println(
+                    "[Random Events] Trapped Chest: no safe position."
+            );
+
             return;
         }
 
         BlockPos tntPos = chestPos.below();
 
-        if (!level.getBlockState(tntPos).isAir()) {
+        BlockState originalSupportState =
+                level.getBlockState(tntPos);
+
+        // Под сундуком должна быть твёрдая поверхность.
+        if (!originalSupportState.isFaceSturdy(
+                level,
+                tntPos,
+                Direction.UP
+        )) {
+            return;
+        }
+
+        // Не заменяем блоки с BlockEntity:
+        // это могло бы уничтожить содержимое чужого контейнера.
+        if (level.getBlockEntity(tntPos) != null) {
+            return;
+        }
+
+        // Не заменяем воздух или уже существующий TNT.
+        if (originalSupportState.isAir()
+                || originalSupportState.is(Blocks.TNT)) {
             return;
         }
 
@@ -261,23 +338,47 @@ public final class EventMechanicsHandler {
                 3
         );
 
-        BlockEntity blockEntity = level.getBlockEntity(chestPos);
+        BlockEntity blockEntity =
+                level.getBlockEntity(chestPos);
 
-        if (blockEntity instanceof ChestBlockEntity chest) {
-            // Сундук намеренно пустой.
-            chest.clearContent();
-            chest.setChanged();
+        if (!(blockEntity instanceof ChestBlockEntity chest)) {
+            level.removeBlock(chestPos, false);
+
+            level.setBlock(
+                    tntPos,
+                    originalSupportState,
+                    3
+            );
+
+            System.err.println(
+                    "[Random Events] Trapped Chest: chest creation failed."
+            );
+
+            return;
         }
+
+        // Сундук намеренно пустой.
+        chest.clearContent();
+        chest.setChanged();
 
         TRAPS.put(
                 player.getUUID(),
-                new TrapData(level, chestPos, tntPos)
+                new TrapData(
+                        level,
+                        chestPos,
+                        tntPos,
+                        originalSupportState
+                )
         );
 
         player.sendSystemMessage(
-                net.minecraft.network.chat.Component.literal(
+                Component.literal(
                         "§6[Random Events] §eГде-то рядом появился подозрительный сундук..."
                 )
+        );
+
+        System.out.println(
+                "[Random Events] Trapped Chest created at " + chestPos
         );
     }
 
@@ -288,19 +389,32 @@ public final class EventMechanicsHandler {
             return;
         }
 
+        if (!data.level.hasChunkAt(data.chestPos)) {
+            return;
+        }
+
         if (data.level.getBlockState(data.chestPos)
                 .is(Blocks.CHEST)) {
+
             data.level.removeBlock(data.chestPos, false);
         }
 
+        // Если ловушка ещё не сработала, восстанавливаем
+        // первоначальный блок под сундуком.
         if (data.level.getBlockState(data.tntPos)
                 .is(Blocks.TNT)) {
-            data.level.removeBlock(data.tntPos, false);
+
+            data.level.setBlock(
+                    data.tntPos,
+                    data.originalSupportState,
+                    3
+            );
         }
     }
 
     private static void tickMeteorShower(ServerPlayer player) {
-        if (!player.isAlive() || player.tickCount % 40 != 0) {
+        if (!player.isAlive()
+                || player.tickCount % METEOR_INTERVAL_TICKS != 0) {
             return;
         }
 
@@ -308,7 +422,7 @@ public final class EventMechanicsHandler {
 
         int count = METEOR_COUNTS.getOrDefault(id, 0);
 
-        if (count >= 24) {
+        if (count >= MAX_METEORS) {
             return;
         }
 
@@ -331,7 +445,13 @@ public final class EventMechanicsHandler {
             return;
         }
 
-        // Ограниченная мощность взрыва для уменьшения нагрузки.
+        BlockPos explosionPos = new BlockPos(x, y, z);
+
+        if (!level.hasChunkAt(explosionPos)) {
+            return;
+        }
+
+        // Взрыв умеренной силы.
         level.explode(
                 null,
                 x + 0.5,
@@ -342,18 +462,36 @@ public final class EventMechanicsHandler {
         );
 
         METEOR_COUNTS.put(id, count + 1);
+
+        if ((count + 1) % 5 == 0) {
+            System.out.println(
+                    "[Random Events] Meteor Shower: "
+                            + (count + 1) + "/" + MAX_METEORS
+            );
+        }
     }
 
     private static BlockPos findSafePosition(
             ServerPlayer player,
             ServerLevel level
     ) {
-        for (int attempt = 0; attempt < 20; attempt++) {
+        for (int attempt = 0; attempt < 32; attempt++) {
+
             int x = player.blockPosition().getX()
                     + RANDOM.nextInt(15) - 7;
 
             int z = player.blockPosition().getZ()
                     + RANDOM.nextInt(15) - 7;
+
+            BlockPos chunkCheck = new BlockPos(
+                    x,
+                    player.blockPosition().getY(),
+                    z
+            );
+
+            if (!level.hasChunkAt(chunkCheck)) {
+                continue;
+            }
 
             int y = level.getHeight(
                     Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
@@ -381,7 +519,7 @@ public final class EventMechanicsHandler {
             if (!level.getBlockState(pos.below()).isFaceSturdy(
                     level,
                     pos.below(),
-                    net.minecraft.core.Direction.UP
+                    Direction.UP
             )) {
                 continue;
             }
@@ -424,7 +562,7 @@ public final class EventMechanicsHandler {
             );
         }
 
-        @SubscribeEvent
+        @SubscribeEvent(priority = EventPriority.HIGHEST)
         public static void onChestOpen(
                 PlayerInteractEvent.RightClickBlock event
         ) {
@@ -443,7 +581,8 @@ public final class EventMechanicsHandler {
             }
 
             if (!data.level.dimension().equals(
-                    player.serverLevel().dimension())) {
+                    player.serverLevel().dimension()
+            )) {
                 return;
             }
 
@@ -451,10 +590,18 @@ public final class EventMechanicsHandler {
                 return;
             }
 
+            // Удаляем запись до взрыва, чтобы исключить
+            // повторное срабатывание на тот же сундук.
             TRAPS.remove(player.getUUID());
 
             data.level.removeBlock(data.chestPos, false);
             data.level.removeBlock(data.tntPos, false);
+
+            player.sendSystemMessage(
+                    Component.literal(
+                            "§c[Random Events] ЛОВУШКА!"
+                    )
+            );
 
             data.level.explode(
                     player,
@@ -464,10 +611,16 @@ public final class EventMechanicsHandler {
                     4.0F,
                     Level.ExplosionInteraction.TNT
             );
+
+            System.out.println(
+                    "[Random Events] Trapped Chest triggered by "
+                            + player.getGameProfile().getName()
+            );
         }
     }
 
     private static final class WaterdropData {
+
         private final double x;
         private final double y;
         private final double z;
@@ -487,18 +640,22 @@ public final class EventMechanicsHandler {
     }
 
     private static final class TrapData {
+
         private final ServerLevel level;
         private final BlockPos chestPos;
         private final BlockPos tntPos;
+        private final BlockState originalSupportState;
 
         private TrapData(
                 ServerLevel level,
                 BlockPos chestPos,
-                BlockPos tntPos
+                BlockPos tntPos,
+                BlockState originalSupportState
         ) {
             this.level = level;
             this.chestPos = chestPos;
             this.tntPos = tntPos;
+            this.originalSupportState = originalSupportState;
         }
     }
-        }
+                                            }

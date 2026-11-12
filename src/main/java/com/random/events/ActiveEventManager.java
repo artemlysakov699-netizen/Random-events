@@ -1,3 +1,4 @@
+
 package com.random.events;
 
 import net.minecraft.ChatFormatting;
@@ -12,10 +13,12 @@ import net.minecraftforge.fml.common.Mod;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.UUID;
 
 public final class ActiveEventManager {
@@ -59,12 +62,10 @@ public final class ActiveEventManager {
         if (first.canCombine()
                 && RANDOM.nextDouble() < COMBINATION_CHANCE) {
 
-            String excluded = first.id();
-
             List<EventDefinition> compatible = new ArrayList<>();
 
             for (EventDefinition definition : allEvents) {
-                if (!definition.id().equals(excluded)
+                if (!definition.id().equals(first.id())
                         && definition.canCombine()) {
                     compatible.add(definition);
                 }
@@ -72,7 +73,7 @@ public final class ActiveEventManager {
 
             EventDefinition second = selectWeighted(
                     compatible,
-                    excluded
+                    first.id()
             );
 
             if (second != null && startEvent(player, second)) {
@@ -120,7 +121,7 @@ public final class ActiveEventManager {
 
         List<ActiveEvent> events = ACTIVE_EVENTS.computeIfAbsent(
                 playerId,
-                id -> new ArrayList<>()
+                ignored -> new ArrayList<>()
         );
 
         for (ActiveEvent active : events) {
@@ -130,7 +131,11 @@ public final class ActiveEventManager {
         }
 
         try {
-            EventEffectHandler.start(player, definition);
+            if (isNewEvent(definition)) {
+                NewEventHandler.start(player, definition);
+            } else {
+                EventEffectHandler.start(player, definition);
+            }
 
             events.add(new ActiveEvent(
                     definition,
@@ -143,7 +148,11 @@ public final class ActiveEventManager {
 
         } catch (RuntimeException exception) {
             try {
-                EventEffectHandler.end(player, definition);
+                if (isNewEvent(definition)) {
+                    NewEventHandler.end(player, definition);
+                } else {
+                    EventEffectHandler.end(player, definition);
+                }
             } catch (RuntimeException cleanupException) {
                 cleanupException.printStackTrace();
             }
@@ -182,36 +191,35 @@ public final class ActiveEventManager {
 
         while (iterator.hasNext()) {
             ActiveEvent active = iterator.next();
+            EventDefinition definition = active.definition;
 
             try {
-                EventEffectHandler.tick(
-                        player,
-                        active.definition
-                );
+                if (isNewEvent(definition)) {
+                    NewEventHandler.tick(player, definition);
+                } else {
+                    EventEffectHandler.tick(player, definition);
+                }
 
-                boolean finished;
+                boolean finished = false;
 
-                if (active.definition.hasTimeLimit()) {
+                if (definition.hasTimeLimit()) {
                     active.remainingTicks--;
 
                     finished = active.remainingTicks <= 0;
-                } else {
-                    finished = NewEventHandler.isFinished(
-                            player,
-                            active.definition
-                    );
+                }
+
+                if (isNewEvent(definition)
+                        && NewEventHandler.isFinished(
+                                player,
+                                definition
+                        )) {
+                    finished = true;
                 }
 
                 if (finished) {
-                    EventEffectHandler.end(
-                            player,
-                            active.definition
-                    );
+                    endEvent(player, definition);
 
-                    sendEndMessage(
-                            player,
-                            active.definition
-                    );
+                    sendEndMessage(player, definition);
 
                     iterator.remove();
                 }
@@ -219,16 +227,13 @@ public final class ActiveEventManager {
             } catch (RuntimeException exception) {
                 System.err.println(
                         "[Random Events] Ошибка во время события: "
-                                + active.definition.id()
+                                + definition.id()
                 );
 
                 exception.printStackTrace();
 
                 try {
-                    EventEffectHandler.end(
-                            player,
-                            active.definition
-                    );
+                    endEvent(player, definition);
                 } catch (RuntimeException cleanupException) {
                     cleanupException.printStackTrace();
                 }
@@ -248,6 +253,32 @@ public final class ActiveEventManager {
         }
     }
 
+    private static void endEvent(
+            ServerPlayer player,
+            EventDefinition definition
+    ) {
+        if (isNewEvent(definition)) {
+            NewEventHandler.end(player, definition);
+        } else {
+            EventEffectHandler.end(player, definition);
+        }
+    }
+
+    private static boolean isNewEvent(EventDefinition definition) {
+        return switch (definition.type()) {
+            case PILLAGER_AMBUSH,
+                 RAVAGER_WRATH,
+                 SLIME_EPIDEMIC,
+                 CURSED_CHEST,
+                 IRON_DEFENDER,
+                 MYSTERIOUS_MERCHANT,
+                 EXPERIENCE_RAIN,
+                 GOLDEN_BLESSING -> true;
+
+            default -> false;
+        };
+    }
+
     public static void endAllEvents(ServerPlayer player) {
         UUID playerId = player.getUUID();
 
@@ -259,10 +290,7 @@ public final class ActiveEventManager {
 
         for (ActiveEvent active : events) {
             try {
-                EventEffectHandler.end(
-                        player,
-                        active.definition
-                );
+                endEvent(player, active.definition);
 
                 sendEndMessage(
                         player,
@@ -447,6 +475,7 @@ public final class ActiveEventManager {
             endAllEvents(player);
 
             EventEffectHandler.cleanupPlayer(player);
+            NewEventHandler.cleanupPlayer(player);
 
             LAST_EVENT.remove(player.getUUID());
         }

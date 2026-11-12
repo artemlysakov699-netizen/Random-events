@@ -120,9 +120,11 @@ public final class EventEffectHandler {
             case SOLAR_BURST, DENSE_FOG, GIFT_OF_FATE,
                  EXPERIENCE_FEVER, WATERDROP, METEOR_SHOWER,
                  TRAPPED_CHEST -> {
-                // Будут подключены в следующих этапах.
+                // Эти механики запускаются отдельным обработчиком.
             }
         }
+
+        EventMechanicsHandler.start(player, definition);
     }
 
     public static void tick(ServerPlayer player, EventDefinition definition) {
@@ -145,9 +147,13 @@ public final class EventEffectHandler {
                 && player.tickCount % 40 == 0) {
             summonLightning(player, player.serverLevel(), definition);
         }
+
+        EventMechanicsHandler.tick(player, definition);
     }
 
     public static void end(ServerPlayer player, EventDefinition definition) {
+        EventMechanicsHandler.end(player, definition);
+
         if (definition.type() == EventType.HELPERS) {
             return;
         }
@@ -176,6 +182,8 @@ public final class EventEffectHandler {
     }
 
     public static void cleanupPlayer(ServerPlayer player) {
+        EventMechanicsHandler.cleanupPlayer(player);
+
         UUID playerId = player.getUUID();
 
         Map<String, List<Entity>> playerEntities =
@@ -379,7 +387,7 @@ public final class EventEffectHandler {
 
     /**
      * Ищет безопасную точку на поверхности.
-     * Максимум 12 попыток, чтобы не создавать бесконечный цикл.
+     * Максимум 12 попыток.
      */
     private static boolean spawnNearPlayer(
             ServerPlayer player,
@@ -461,7 +469,6 @@ public final class EventEffectHandler {
 
     /**
      * Защита построек только от криперов события.
-     * Урон игрокам и существам от взрыва сохраняется.
      */
     @Mod.EventBusSubscriber(
             modid = RandomEvents.MOD_ID,

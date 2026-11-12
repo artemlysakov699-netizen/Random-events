@@ -20,11 +20,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.trading.MerchantOffer;
 import net.minecraft.world.level.levelgen.Heightmap;
-import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -51,7 +49,6 @@ public final class NewEventHandler {
 
     private static final int MERCHANT_DURATION = 5 * 60 * 20;
     private static final int MERCHANT_WARNING_TIME = 60 * 20;
-
     private static final int EXPERIENCE_RAIN_DURATION = 15 * 20;
 
     private NewEventHandler() {
@@ -129,8 +126,11 @@ public final class NewEventHandler {
             case SLIME_EPIDEMIC ->
                     !hasLivingEntities(id);
 
-            case CURSED_CHEST ->
+            case PILLAGER_AMBUSH ->
                     !hasLivingEntities(id);
+
+            case CURSED_CHEST ->
+                    !CursedChestHandler.isActive(player);
 
             default -> false;
         };
@@ -158,15 +158,14 @@ public final class NewEventHandler {
                     endGoldenBlessing(player);
 
             case CURSED_CHEST ->
+                    CursedChestHandler.remove(player);
+
+            case PILLAGER_AMBUSH,
+                 IRON_DEFENDER ->
                     removeTrackedEntities(id);
 
             default -> {
             }
-        }
-
-        if (definition.type() == EventType.PILLAGER_AMBUSH
-                || definition.type() == EventType.IRON_DEFENDER) {
-            removeTrackedEntities(id);
         }
 
         /*
@@ -179,21 +178,22 @@ public final class NewEventHandler {
         UUID id = player.getUUID();
 
         /*
-         * При выходе игрока не удаляем:
-         * - Разрушителя;
-         * - слизней;
-         * - торговца;
-         * - уже появившиеся сферы опыта;
-         * - железного защитника.
+         * При выходе инициатора удаляем только проклятый сундук.
          *
-         * Эти существа должны оставаться в мире.
+         * Разрушитель, слизни, торговец, железный защитник
+         * и уже появившиеся сферы опыта остаются в мире.
          */
+        CursedChestHandler.remove(player);
 
         EXPERIENCE_RAIN_TICKS.remove(id);
         EXPERIENCE_ORBS_SPAWNED.remove(id);
 
         MERCHANT_TICKS.remove(id);
         MERCHANT_WARNING_SENT.remove(id);
+    }
+
+    private static void startCursedChest(ServerPlayer player) {
+        CursedChestHandler.start(player);
     }
 
     private static void spawnPillagerAmbush(ServerPlayer player) {
@@ -516,11 +516,7 @@ public final class NewEventHandler {
         UUID id = player.getUUID();
 
         EXPERIENCE_RAIN_TICKS.put(id, 0);
-
-        EXPERIENCE_ORBS_SPAWNED.put(
-                id,
-                0
-        );
+        EXPERIENCE_ORBS_SPAWNED.put(id, 0);
 
         player.sendSystemMessage(
                 Component.literal(
@@ -562,7 +558,6 @@ public final class NewEventHandler {
         for (int i = 0; i < amount; i++) {
             double x = player.getX() + RANDOM.nextDouble() * 16 - 8;
             double z = player.getZ() + RANDOM.nextDouble() * 16 - 8;
-
             double y = player.getY() + 12 + RANDOM.nextDouble() * 8;
 
             ExperienceOrb orb = new ExperienceOrb(
@@ -715,14 +710,6 @@ public final class NewEventHandler {
 
         player.removeEffect(
                 net.minecraft.world.effect.MobEffects.SATURATION
-        );
-    }
-
-    private static void startCursedChest(ServerPlayer player) {
-        player.sendSystemMessage(
-                Component.literal(
-                        "§5[Random Events] Проклятый сундук ещё не подключён."
-                )
         );
     }
 

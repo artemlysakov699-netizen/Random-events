@@ -1,3 +1,4 @@
+
 package com.random.events;
 
 import net.minecraft.core.BlockPos;
@@ -20,6 +21,7 @@ import net.minecraft.world.entity.monster.Slime;
 import net.minecraft.world.entity.npc.WanderingTrader;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.trading.ItemCost;
 import net.minecraft.world.item.trading.MerchantOffer;
 import net.minecraft.world.level.levelgen.Heightmap;
 
@@ -570,13 +572,13 @@ public final class NewEventHandler {
             int emeraldCost,
             ItemStack result
     ) {
-        ItemStack emeralds = new ItemStack(
+        ItemCost emeraldCostItem = new ItemCost(
                 Items.EMERALD,
                 emeraldCost
         );
 
         MerchantOffer offer = new MerchantOffer(
-                emeralds,
+                emeraldCostItem,
                 result,
                 1,
                 30,
@@ -956,4 +958,4 @@ public final class NewEventHandler {
 
         return false;
     }
-            }
+}

@@ -1,4 +1,3 @@
-
 package com.random.events;
 
 import java.util.Objects;
@@ -31,13 +30,19 @@ public record EventDefinition(
             throw new IllegalArgumentException("Event weight must be positive");
         }
 
-        if (durationTicks <= 0) {
-            throw new IllegalArgumentException("Event duration must be positive");
+        if (durationTicks < 0) {
+            throw new IllegalArgumentException(
+                    "Event duration cannot be negative"
+            );
         }
     }
 
     public int getDurationSeconds() {
         return durationTicks / 20;
+    }
+
+    public boolean hasTimeLimit() {
+        return durationTicks > 0;
     }
 
     public enum EventType {
@@ -51,7 +56,6 @@ public record EventDefinition(
         HUNGER,
         CHICKEN_RAIN,
 
-        // Новые события
         ZOMBIE_HORDE,
         SOLAR_BURST,
         SPIDER_HUNT,
@@ -66,6 +70,16 @@ public record EventDefinition(
         ZOMBIE_BOSS,
         METEOR_SHOWER,
         HELPERS,
-        TRAPPED_CHEST
+        TRAPPED_CHEST,
+
+        // Новые события
+        PILLAGER_AMBUSH,
+        RAVAGER_WRATH,
+        SLIME_EPIDEMIC,
+        CURSED_CHEST,
+        IRON_DEFENDER,
+        MYSTERIOUS_MERCHANT,
+        EXPERIENCE_RAIN,
+        GOLDEN_BLESSING
     }
 }

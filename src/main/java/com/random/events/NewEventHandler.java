@@ -1,21 +1,28 @@
-
 package com.random.events;
 
 import com.random.events.EventDefinition.EventType;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.core.Holder;
+import net.minecraft.world.effect.MobEffect;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.animal.IronGolem;
+import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.entity.monster.Pillager;
 import net.minecraft.world.entity.monster.Ravager;
 import net.minecraft.world.entity.monster.Slime;
 import net.minecraft.world.entity.npc.WanderingTrader;
-import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.trading.MerchantOffer;
@@ -32,7 +39,11 @@ public final class NewEventHandler {
 
     private static final Random RANDOM = new Random();
 
-    private static final Map<UUID, List<Entity>> EVENT_ENTITIES =
+    /*
+     * Существа хранятся отдельно для каждого игрока
+     * и каждого конкретного события.
+     */
+    private static final Map<UUID, Map<String, List<Entity>>> EVENT_ENTITIES =
             new HashMap<>();
 
     private static final Map<UUID, Integer> EXPERIENCE_RAIN_TICKS =
@@ -49,10 +60,19 @@ public final class NewEventHandler {
 
     private static final int MERCHANT_DURATION = 5 * 60 * 20;
     private static final int MERCHANT_WARNING_TIME = 60 * 20;
+
     private static final int EXPERIENCE_RAIN_DURATION = 15 * 20;
+    private static final int EXPERIENCE_RAIN_MAX_ORBS = 30;
+
+    private static final int GOLDEN_BLESSING_DURATION = 40;
+    private static final int GOLDEN_BLESSING_AMPLIFIER = 255;
 
     private NewEventHandler() {
     }
+
+    // =====================================================
+    // ЗАПУСК СОБЫТИЙ
+    // =====================================================
 
     public static void start(
             ServerPlayer player,
@@ -61,19 +81,19 @@ public final class NewEventHandler {
         switch (definition.type()) {
 
             case PILLAGER_AMBUSH ->
-                    spawnPillagerAmbush(player);
+                    spawnPillagerAmbush(player, definition);
 
             case RAVAGER_WRATH ->
-                    spawnRavager(player);
+                    spawnRavager(player, definition);
 
             case SLIME_EPIDEMIC ->
-                    spawnSlimeEpidemic(player);
+                    spawnSlimeEpidemic(player, definition);
 
             case IRON_DEFENDER ->
-                    spawnIronDefender(player);
+                    spawnIronDefender(player, definition);
 
             case MYSTERIOUS_MERCHANT ->
-                    spawnMerchant(player);
+                    spawnMerchant(player, definition);
 
             case EXPERIENCE_RAIN ->
                     startExperienceRain(player);
@@ -89,6 +109,10 @@ public final class NewEventHandler {
         }
     }
 
+    // =====================================================
+    // ОБНОВЛЕНИЕ СОБЫТИЙ
+    // =====================================================
+
     public static void tick(
             ServerPlayer player,
             EventDefinition definition
@@ -96,7 +120,7 @@ public final class NewEventHandler {
         switch (definition.type()) {
 
             case IRON_DEFENDER ->
-                    protectPlayer(player);
+                    protectPlayer(player, definition);
 
             case MYSTERIOUS_MERCHANT ->
                     tickMerchant(player);
@@ -112,11 +136,15 @@ public final class NewEventHandler {
         }
     }
 
+    // =====================================================
+    // ПРОВЕРКА ЗАВЕРШЕНИЯ
+    // =====================================================
+
     public static boolean isFinished(
             ServerPlayer player,
             EventDefinition definition
     ) {
-        UUID id = player.getUUID();
+        UUID playerId = player.getUUID();
 
         return switch (definition.type()) {
 
@@ -124,10 +152,16 @@ public final class NewEventHandler {
                     !player.isAlive();
 
             case SLIME_EPIDEMIC ->
-                    !hasLivingEntities(id);
+                    !hasLivingEntities(
+                            playerId,
+                            definition.id()
+                    );
 
             case PILLAGER_AMBUSH ->
-                    !hasLivingEntities(id);
+                    !hasLivingEntities(
+                            playerId,
+                            definition.id()
+                    );
 
             case CURSED_CHEST ->
                     !CursedChestHandler.isActive(player);
@@ -136,93 +170,141 @@ public final class NewEventHandler {
         };
     }
 
+    // =====================================================
+    // ЗАВЕРШЕНИЕ СОБЫТИЙ
+    // =====================================================
+
     public static void end(
             ServerPlayer player,
             EventDefinition definition
     ) {
-        UUID id = player.getUUID();
+        UUID playerId = player.getUUID();
 
         switch (definition.type()) {
 
             case EXPERIENCE_RAIN -> {
-                EXPERIENCE_RAIN_TICKS.remove(id);
-                EXPERIENCE_ORBS_SPAWNED.remove(id);
+                EXPERIENCE_RAIN_TICKS.remove(playerId);
+                EXPERIENCE_ORBS_SPAWNED.remove(playerId);
             }
 
             case MYSTERIOUS_MERCHANT -> {
-                MERCHANT_TICKS.remove(id);
-                MERCHANT_WARNING_SENT.remove(id);
+                MERCHANT_TICKS.remove(playerId);
+                MERCHANT_WARNING_SENT.remove(playerId);
+
+                forgetTrackedEntities(
+                        playerId,
+                        definition.id()
+                );
             }
 
-            case GOLDEN_BLESSING ->
-                    endGoldenBlessing(player);
+            case GOLDEN_BLESSING -> {
+                /*
+                 * Эффекты не удаляем принудительно.
+                 * Последнее наложение постепенно закончится
+                 * самостоятельно.
+                 */
+            }
 
             case CURSED_CHEST ->
                     CursedChestHandler.remove(player);
 
             case PILLAGER_AMBUSH,
                  IRON_DEFENDER ->
-                    removeTrackedEntities(id);
+                    removeTrackedEntities(
+                            playerId,
+                            definition.id()
+                    );
+
+            case RAVAGER_WRATH,
+                 SLIME_EPIDEMIC ->
+                    forgetTrackedEntities(
+                            playerId,
+                            definition.id()
+                    );
 
             default -> {
             }
         }
-
-        /*
-         * Разрушитель и слизни намеренно не удаляются
-         * при обычном завершении события.
-         */
     }
 
+    /*
+     * Очистка при выходе игрока.
+     *
+     * Существа не удаляются из мира:
+     * - разрушитель;
+     * - слизни;
+     * - разбойники;
+     * - железный защитник;
+     * - торговец.
+     *
+     * Уже появившиеся сферы опыта также остаются.
+     */
     public static void cleanupPlayer(ServerPlayer player) {
-        UUID id = player.getUUID();
+        UUID playerId = player.getUUID();
 
-        /*
-         * При выходе инициатора удаляем только проклятый сундук.
-         *
-         * Разрушитель, слизни, торговец, железный защитник
-         * и уже появившиеся сферы опыта остаются в мире.
-         */
         CursedChestHandler.remove(player);
 
-        EXPERIENCE_RAIN_TICKS.remove(id);
-        EXPERIENCE_ORBS_SPAWNED.remove(id);
+        EVENT_ENTITIES.remove(playerId);
 
-        MERCHANT_TICKS.remove(id);
-        MERCHANT_WARNING_SENT.remove(id);
+        EXPERIENCE_RAIN_TICKS.remove(playerId);
+        EXPERIENCE_ORBS_SPAWNED.remove(playerId);
+
+        MERCHANT_TICKS.remove(playerId);
+        MERCHANT_WARNING_SENT.remove(playerId);
     }
+
+    // =====================================================
+    // ПРОКЛЯТЫЙ СУНДУК
+    // =====================================================
 
     private static void startCursedChest(ServerPlayer player) {
         CursedChestHandler.start(player);
     }
 
-    private static void spawnPillagerAmbush(ServerPlayer player) {
+    // =====================================================
+    // ЗАСАДА РАЗБОЙНИКОВ
+    // =====================================================
+
+    private static void spawnPillagerAmbush(
+            ServerPlayer player,
+            EventDefinition definition
+    ) {
         ServerLevel level = player.serverLevel();
 
         int count = 5 + RANDOM.nextInt(3);
         int spawned = 0;
 
         player.sendSystemMessage(
-                Component.literal("§c§l[Random Events] ЗАСАДА!")
+                Component.literal(
+                        "§c§l[Random Events] ЗАСАДА!"
+                )
         );
 
         for (int i = 0; i < count; i++) {
-            Pillager pillager = EntityType.PILLAGER.create(level);
+
+            Pillager pillager =
+                    EntityType.PILLAGER.create(level);
 
             if (pillager == null) {
                 continue;
             }
 
             pillager.setItemSlot(
-                    net.minecraft.world.entity.EquipmentSlot.MAINHAND,
+                    EquipmentSlot.MAINHAND,
                     new ItemStack(Items.CROSSBOW)
             );
 
             pillager.setTarget(player);
             pillager.setPersistenceRequired();
 
-            if (spawnBehindPlayer(player, pillager, level, 12, 24)) {
-                track(player, pillager);
+            if (spawnBehindPlayer(
+                    player,
+                    pillager,
+                    level,
+                    12,
+                    24
+            )) {
+                track(player, definition, pillager);
                 spawned++;
             }
         }
@@ -233,10 +315,18 @@ public final class NewEventHandler {
         );
     }
 
-    private static void spawnRavager(ServerPlayer player) {
+    // =====================================================
+    // ЯРОСТЬ РАЗРУШИТЕЛЯ
+    // =====================================================
+
+    private static void spawnRavager(
+            ServerPlayer player,
+            EventDefinition definition
+    ) {
         ServerLevel level = player.serverLevel();
 
-        Ravager ravager = EntityType.RAVAGER.create(level);
+        Ravager ravager =
+                EntityType.RAVAGER.create(level);
 
         if (ravager == null) {
             return;
@@ -245,8 +335,19 @@ public final class NewEventHandler {
         ravager.setPersistenceRequired();
         ravager.setTarget(player);
 
-        if (spawnBehindPlayer(player, ravager, level, 12, 20)) {
-            track(player, ravager);
+        if (ravager.getAttribute(Attributes.ATTACK_DAMAGE) != null) {
+            ravager.getAttribute(Attributes.ATTACK_DAMAGE)
+                    .setBaseValue(50.0);
+        }
+
+        if (spawnBehindPlayer(
+                player,
+                ravager,
+                level,
+                12,
+                20
+        )) {
+            track(player, definition, ravager);
 
             player.sendSystemMessage(
                     Component.literal(
@@ -256,14 +357,23 @@ public final class NewEventHandler {
         }
     }
 
-    private static void spawnSlimeEpidemic(ServerPlayer player) {
+    // =====================================================
+    // СЛИЗНЕВАЯ ЭПИДЕМИЯ
+    // =====================================================
+
+    private static void spawnSlimeEpidemic(
+            ServerPlayer player,
+            EventDefinition definition
+    ) {
         ServerLevel level = player.serverLevel();
 
         int count = 5 + RANDOM.nextInt(4);
         int spawned = 0;
 
         for (int i = 0; i < count; i++) {
-            Slime slime = EntityType.SLIME.create(level);
+
+            Slime slime =
+                    EntityType.SLIME.create(level);
 
             if (slime == null) {
                 continue;
@@ -272,9 +382,16 @@ public final class NewEventHandler {
             slime.setSize(4, true);
             slime.setPersistenceRequired();
 
-            if (spawnNearPlayer(player, slime, level, 10, 20)) {
+            if (spawnNearPlayer(
+                    player,
+                    slime,
+                    level,
+                    10,
+                    20
+            )) {
                 slime.setTarget(player);
-                track(player, slime);
+
+                track(player, definition, slime);
                 spawned++;
             }
         }
@@ -291,10 +408,18 @@ public final class NewEventHandler {
         );
     }
 
-    private static void spawnIronDefender(ServerPlayer player) {
+    // =====================================================
+    // ЖЕЛЕЗНЫЙ ЗАЩИТНИК
+    // =====================================================
+
+    private static void spawnIronDefender(
+            ServerPlayer player,
+            EventDefinition definition
+    ) {
         ServerLevel level = player.serverLevel();
 
-        IronGolem golem = EntityType.IRON_GOLEM.create(level);
+        IronGolem golem =
+                EntityType.IRON_GOLEM.create(level);
 
         if (golem == null) {
             return;
@@ -309,57 +434,71 @@ public final class NewEventHandler {
 
         golem.setCustomNameVisible(true);
 
-        if (spawnNearPlayer(player, golem, level, 3, 8)) {
-            track(player, golem);
-
-            level.sendParticles(
-                    net.minecraft.core.particles.ParticleTypes.CLOUD,
-                    golem.getX(),
-                    golem.getY() + 1,
-                    golem.getZ(),
-                    30,
-                    0.8,
-                    1.0,
-                    0.8,
-                    0.1
-            );
-
-            level.sendParticles(
-                    net.minecraft.core.particles.ParticleTypes.CRIT,
-                    golem.getX(),
-                    golem.getY() + 1,
-                    golem.getZ(),
-                    25,
-                    0.7,
-                    0.8,
-                    0.7,
-                    0.1
-            );
-
-            player.sendSystemMessage(
-                    Component.literal(
-                            "§6[Random Events] §eЖелезный защитник прибыл!"
-                    )
-            );
+        if (golem.getAttribute(Attributes.ATTACK_DAMAGE) != null) {
+            golem.getAttribute(Attributes.ATTACK_DAMAGE)
+                    .setBaseValue(100.0);
         }
+
+        if (!spawnNearPlayer(
+                player,
+                golem,
+                level,
+                3,
+                8
+        )) {
+            return;
+        }
+
+        track(player, definition, golem);
+
+        level.sendParticles(
+                ParticleTypes.CLOUD,
+                golem.getX(),
+                golem.getY() + 1,
+                golem.getZ(),
+                30,
+                0.8,
+                1.0,
+                0.8,
+                0.1
+        );
+
+        level.sendParticles(
+                ParticleTypes.CRIT,
+                golem.getX(),
+                golem.getY() + 1,
+                golem.getZ(),
+                25,
+                0.7,
+                0.8,
+                0.7,
+                0.1
+        );
+
+        player.sendSystemMessage(
+                Component.literal(
+                        "§6[Random Events] §eЖелезный защитник прибыл!"
+                )
+        );
     }
 
-    private static void protectPlayer(ServerPlayer player) {
-        UUID id = player.getUUID();
+    private static void protectPlayer(
+            ServerPlayer player,
+            EventDefinition definition
+    ) {
+        List<Entity> entities = getTrackedEntities(
+                player.getUUID(),
+                definition.id()
+        );
 
-        List<Entity> entities = EVENT_ENTITIES.get(id);
-
-        if (entities == null) {
+        if (entities == null || player.tickCount % 10 != 0) {
             return;
         }
 
         for (Entity entity : entities) {
+
             if (!(entity instanceof IronGolem golem)
                     || !golem.isAlive()) {
-                continue;
-            }
-
-            if (golem.tickCount % 10 != 0) {
                 continue;
             }
 
@@ -368,25 +507,37 @@ public final class NewEventHandler {
                     golem.getBoundingBox().inflate(16),
                     mob -> mob.isAlive()
                             && mob != golem
-                            && mob != player
-                            && mob.getTarget() != null
-                            && mob.getTarget().isAlive()
+                            && mob instanceof Enemy
+                            && mob.getType() != EntityType.ENDER_DRAGON
             );
 
-            for (Mob hostile : nearby) {
-                if (hostile instanceof net.minecraft.world.entity.boss.enderdragon.EnderDragon) {
-                    continue;
-                }
+            Mob closestHostile = null;
+            double closestDistance = Double.MAX_VALUE;
 
-                if (hostile instanceof net.minecraft.world.entity.monster.Enemy) {
-                    golem.setTarget(hostile);
-                    break;
+            for (Mob hostile : nearby) {
+
+                double distance = golem.distanceToSqr(hostile);
+
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestHostile = hostile;
                 }
+            }
+
+            if (closestHostile != null) {
+                golem.setTarget(closestHostile);
             }
         }
     }
 
-    private static void spawnMerchant(ServerPlayer player) {
+    // =====================================================
+    // ЗАГАДОЧНЫЙ ТОРГОВЕЦ
+    // =====================================================
+
+    private static void spawnMerchant(
+            ServerPlayer player,
+            EventDefinition definition
+    ) {
         ServerLevel level = player.serverLevel();
 
         WanderingTrader trader =
@@ -396,54 +547,64 @@ public final class NewEventHandler {
             return;
         }
 
-        if (!spawnNearPlayer(player, trader, level, 4, 8)) {
+        if (!spawnNearPlayer(
+                player,
+                trader,
+                level,
+                4,
+                8
+        )) {
             player.sendSystemMessage(
                     Component.literal(
                             "§c[Random Events] Не удалось найти место для торговца."
                     )
             );
+
             return;
         }
 
-        trader.setPersistenceRequired();
+        /*
+         * Не устанавливаем persistenceRequired:
+         * торговец должен исчезнуть по своему таймеру.
+         */
         trader.setDespawnDelay(MERCHANT_DURATION);
 
         addMerchantTrade(
                 trader,
                 new ItemStack(Items.DIAMOND, 3),
-                32 + RANDOM.nextInt(17),
+                randomEmeraldPrice(),
                 new ItemStack(Items.NETHERITE_INGOT)
         );
 
         addMerchantTrade(
                 trader,
                 new ItemStack(Items.DIAMOND, 2),
-                32 + RANDOM.nextInt(17),
+                randomEmeraldPrice(),
                 new ItemStack(Items.ENCHANTED_GOLDEN_APPLE)
         );
 
         addMerchantTrade(
                 trader,
                 new ItemStack(Items.DIAMOND, 2),
-                32 + RANDOM.nextInt(17),
+                randomEmeraldPrice(),
                 new ItemStack(Items.TOTEM_OF_UNDYING)
         );
 
         addMerchantTrade(
                 trader,
                 new ItemStack(Items.DIAMOND, 1),
-                32 + RANDOM.nextInt(17),
+                randomEmeraldPrice(),
                 new ItemStack(Items.ELYTRA)
         );
 
         addMerchantTrade(
                 trader,
                 new ItemStack(Items.DIAMOND, 2),
-                32 + RANDOM.nextInt(17),
+                randomEmeraldPrice(),
                 new ItemStack(Items.DIAMOND_CHESTPLATE)
         );
 
-        track(player, trader);
+        track(player, definition, trader);
 
         MERCHANT_TICKS.put(
                 player.getUUID(),
@@ -460,6 +621,10 @@ public final class NewEventHandler {
                         "§6[Random Events] §eЗагадочный торговец появился рядом!"
                 )
         );
+    }
+
+    private static int randomEmeraldPrice() {
+        return 32 + RANDOM.nextInt(33);
     }
 
     private static void addMerchantTrade(
@@ -486,9 +651,9 @@ public final class NewEventHandler {
     }
 
     private static void tickMerchant(ServerPlayer player) {
-        UUID id = player.getUUID();
+        UUID playerId = player.getUUID();
 
-        Integer remaining = MERCHANT_TICKS.get(id);
+        Integer remaining = MERCHANT_TICKS.get(playerId);
 
         if (remaining == null) {
             return;
@@ -496,12 +661,15 @@ public final class NewEventHandler {
 
         remaining--;
 
-        MERCHANT_TICKS.put(id, remaining);
+        MERCHANT_TICKS.put(playerId, remaining);
 
         if (remaining <= MERCHANT_WARNING_TIME
-                && !MERCHANT_WARNING_SENT.getOrDefault(id, false)) {
+                && !MERCHANT_WARNING_SENT.getOrDefault(
+                        playerId,
+                        false
+                )) {
 
-            MERCHANT_WARNING_SENT.put(id, true);
+            MERCHANT_WARNING_SENT.put(playerId, true);
 
             player.sendSystemMessage(
                     Component.literal(
@@ -512,11 +680,15 @@ public final class NewEventHandler {
         }
     }
 
-    private static void startExperienceRain(ServerPlayer player) {
-        UUID id = player.getUUID();
+    // =====================================================
+    // ОПЫТНЫЙ ДОЖДЬ
+    // =====================================================
 
-        EXPERIENCE_RAIN_TICKS.put(id, 0);
-        EXPERIENCE_ORBS_SPAWNED.put(id, 0);
+    private static void startExperienceRain(ServerPlayer player) {
+        UUID playerId = player.getUUID();
+
+        EXPERIENCE_RAIN_TICKS.put(playerId, 0);
+        EXPERIENCE_ORBS_SPAWNED.put(playerId, 0);
 
         player.sendSystemMessage(
                 Component.literal(
@@ -526,9 +698,12 @@ public final class NewEventHandler {
     }
 
     private static void tickExperienceRain(ServerPlayer player) {
-        UUID id = player.getUUID();
+        UUID playerId = player.getUUID();
 
-        int elapsed = EXPERIENCE_RAIN_TICKS.getOrDefault(id, 0);
+        int elapsed = EXPERIENCE_RAIN_TICKS.getOrDefault(
+                playerId,
+                0
+        );
 
         if (elapsed >= EXPERIENCE_RAIN_DURATION) {
             return;
@@ -536,30 +711,48 @@ public final class NewEventHandler {
 
         elapsed++;
 
-        EXPERIENCE_RAIN_TICKS.put(id, elapsed);
+        EXPERIENCE_RAIN_TICKS.put(
+                playerId,
+                elapsed
+        );
 
         if (elapsed % 10 != 0) {
             return;
         }
 
-        int spawned = EXPERIENCE_ORBS_SPAWNED.getOrDefault(id, 0);
+        int spawned = EXPERIENCE_ORBS_SPAWNED.getOrDefault(
+                playerId,
+                0
+        );
 
-        if (spawned >= 30) {
+        if (spawned >= EXPERIENCE_RAIN_MAX_ORBS) {
             return;
         }
 
         int amount = Math.min(
                 2 + RANDOM.nextInt(3),
-                30 - spawned
+                EXPERIENCE_RAIN_MAX_ORBS - spawned
         );
 
         ServerLevel level = player.serverLevel();
 
         for (int i = 0; i < amount; i++) {
-            double x = player.getX() + RANDOM.nextDouble() * 16 - 8;
-            double z = player.getZ() + RANDOM.nextDouble() * 16 - 8;
-            double y = player.getY() + 12 + RANDOM.nextDouble() * 8;
 
+            double x = player.getX()
+                    + RANDOM.nextDouble() * 16 - 8;
+
+            double z = player.getZ()
+                    + RANDOM.nextDouble() * 16 - 8;
+
+            double y = Math.min(
+                    player.getY() + 12 + RANDOM.nextDouble() * 8,
+                    level.getMaxBuildHeight() - 2
+            );
+
+            /*
+             * Значение 2 означает 2 единицы опыта
+             * за каждую сферу.
+             */
             ExperienceOrb orb = new ExperienceOrb(
                     level,
                     x,
@@ -572,10 +765,14 @@ public final class NewEventHandler {
         }
 
         EXPERIENCE_ORBS_SPAWNED.put(
-                id,
+                playerId,
                 spawned + amount
         );
     }
+
+    // =====================================================
+    // ЗОЛОТОЕ БЛАГОСЛОВЕНИЕ
+    // =====================================================
 
     private static void startGoldenBlessing(ServerPlayer player) {
         player.sendSystemMessage(
@@ -588,133 +785,142 @@ public final class NewEventHandler {
     }
 
     private static void tickGoldenBlessing(ServerPlayer player) {
-        int duration = 40;
+        int duration = GOLDEN_BLESSING_DURATION;
+        int amplifier = GOLDEN_BLESSING_AMPLIFIER;
 
-        player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                net.minecraft.world.effect.MobEffects.MOVEMENT_SPEED,
-                duration,
-                4,
-                false,
-                true
-        ));
+        // Скорость
+        applyBlessing(player, MobEffects.MOVEMENT_SPEED,
+                duration, amplifier);
 
-        player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                net.minecraft.world.effect.MobEffects.MOVEMENT_SLOW_FALLING,
-                duration,
-                0,
-                false,
-                true
-        ));
+        // Ускорение добычи
+        applyBlessing(player, MobEffects.DIG_SPEED,
+                duration, amplifier);
 
-        player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                net.minecraft.world.effect.MobEffects.REGENERATION,
-                duration,
-                4,
-                false,
-                true
-        ));
+        // Сила
+        applyBlessing(player, MobEffects.DAMAGE_BOOST,
+                duration, amplifier);
 
-        player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                net.minecraft.world.effect.MobEffects.DAMAGE_RESISTANCE,
-                duration,
-                4,
-                false,
-                true
-        ));
+        // Прыгучесть
+        applyBlessing(player, MobEffects.JUMP,
+                duration, amplifier);
 
-        player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE,
-                duration,
-                0,
-                false,
-                true
-        ));
+        // Регенерация
+        applyBlessing(player, MobEffects.REGENERATION,
+                duration, amplifier);
 
-        player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                net.minecraft.world.effect.MobEffects.WATER_BREATHING,
-                duration,
-                0,
-                false,
-                true
-        ));
+        // Сопротивление урону
+        applyBlessing(player, MobEffects.DAMAGE_RESISTANCE,
+                duration, amplifier);
 
-        player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                net.minecraft.world.effect.MobEffects.NIGHT_VISION,
-                duration,
-                0,
-                false,
-                true
-        ));
+        // Огнестойкость
+        applyBlessing(player, MobEffects.FIRE_RESISTANCE,
+                duration, amplifier);
 
-        player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                net.minecraft.world.effect.MobEffects.DAMAGE_BOOST,
-                duration,
-                4,
-                false,
-                true
-        ));
+        // Подводное дыхание
+        applyBlessing(player, MobEffects.WATER_BREATHING,
+                duration, amplifier);
 
-        player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                net.minecraft.world.effect.MobEffects.ABSORPTION,
-                duration,
-                4,
-                false,
-                true
-        ));
+        // Невидимость
+        applyBlessing(player, MobEffects.INVISIBILITY,
+                duration, amplifier);
 
-        player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                net.minecraft.world.effect.MobEffects.SATURATION,
-                duration,
-                4,
-                false,
-                true
-        ));
+        // Ночное зрение
+        applyBlessing(player, MobEffects.NIGHT_VISION,
+                duration, amplifier);
+
+        // Увеличение здоровья
+        applyBlessing(player, MobEffects.HEALTH_BOOST,
+                duration, amplifier);
+
+        // Поглощение
+        applyBlessing(player, MobEffects.ABSORPTION,
+                duration, amplifier);
+
+        // Насыщение
+        applyBlessing(player, MobEffects.SATURATION,
+                duration, amplifier);
+
+        // Удача
+        applyBlessing(player, MobEffects.LUCK,
+                duration, amplifier);
+
+        // Медленное падение
+        applyBlessing(player, MobEffects.SLOW_FALLING,
+                duration, amplifier);
+
+        // Сила проводника
+        applyBlessing(player, MobEffects.CONDUIT_POWER,
+                duration, amplifier);
+
+        // Грация дельфина
+        applyBlessing(player, MobEffects.DOLPHINS_GRACE,
+                duration, amplifier);
+
+        // Герой деревни
+        applyBlessing(player, MobEffects.HERO_OF_THE_VILLAGE,
+                duration, amplifier);
     }
 
-    private static void endGoldenBlessing(ServerPlayer player) {
-        player.removeEffect(
-                net.minecraft.world.effect.MobEffects.MOVEMENT_SPEED
-        );
-
-        player.removeEffect(
-                net.minecraft.world.effect.MobEffects.MOVEMENT_SLOW_FALLING
-        );
-
-        player.removeEffect(
-                net.minecraft.world.effect.MobEffects.REGENERATION
-        );
-
-        player.removeEffect(
-                net.minecraft.world.effect.MobEffects.DAMAGE_RESISTANCE
-        );
-
-        player.removeEffect(
-                net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE
-        );
-
-        player.removeEffect(
-                net.minecraft.world.effect.MobEffects.WATER_BREATHING
-        );
-
-        player.removeEffect(
-                net.minecraft.world.effect.MobEffects.NIGHT_VISION
-        );
-
-        player.removeEffect(
-                net.minecraft.world.effect.MobEffects.DAMAGE_BOOST
-        );
-
-        player.removeEffect(
-                net.minecraft.world.effect.MobEffects.ABSORPTION
-        );
-
-        player.removeEffect(
-                net.minecraft.world.effect.MobEffects.SATURATION
+    private static void applyBlessing(
+            ServerPlayer player,
+            Holder<MobEffect> effect,
+            int duration,
+            int amplifier
+    ) {
+        player.addEffect(
+                new MobEffectInstance(
+                        effect,
+                        duration,
+                        amplifier,
+                        false,
+                        true
+                )
         );
     }
 
-    private static boolean hasLivingEntities(UUID playerId) {
-        List<Entity> entities = EVENT_ENTITIES.get(playerId);
+    // =====================================================
+    // ОТСЛЕЖИВАНИЕ СУЩЕСТВ
+    // =====================================================
+
+    private static void track(
+            ServerPlayer player,
+            EventDefinition definition,
+            Entity entity
+    ) {
+        EVENT_ENTITIES
+                .computeIfAbsent(
+                        player.getUUID(),
+                        ignored -> new HashMap<>()
+                )
+                .computeIfAbsent(
+                        definition.id(),
+                        ignored -> new ArrayList<>()
+                )
+                .add(entity);
+    }
+
+    private static List<Entity> getTrackedEntities(
+            UUID playerId,
+            String eventId
+    ) {
+        Map<String, List<Entity>> playerEntities =
+                EVENT_ENTITIES.get(playerId);
+
+        if (playerEntities == null) {
+            return null;
+        }
+
+        return playerEntities.get(eventId);
+    }
+
+    private static boolean hasLivingEntities(
+            UUID playerId,
+            String eventId
+    ) {
+        List<Entity> entities = getTrackedEntities(
+                playerId,
+                eventId
+        );
 
         if (entities == null || entities.isEmpty()) {
             return false;
@@ -729,29 +935,53 @@ public final class NewEventHandler {
         return false;
     }
 
-    private static void removeTrackedEntities(UUID playerId) {
-        List<Entity> entities = EVENT_ENTITIES.remove(playerId);
+    /*
+     * Удаляет только существ конкретного события.
+     */
+    private static void removeTrackedEntities(
+            UUID playerId,
+            String eventId
+    ) {
+        List<Entity> entities = getTrackedEntities(
+                playerId,
+                eventId
+        );
 
-        if (entities == null) {
+        if (entities != null) {
+            for (Entity entity : entities) {
+                if (entity.isAlive()) {
+                    entity.discard();
+                }
+            }
+        }
+
+        forgetTrackedEntities(playerId, eventId);
+    }
+
+    /*
+     * Удаляет записи отслеживания, но не самих существ.
+     */
+    private static void forgetTrackedEntities(
+            UUID playerId,
+            String eventId
+    ) {
+        Map<String, List<Entity>> playerEntities =
+                EVENT_ENTITIES.get(playerId);
+
+        if (playerEntities == null) {
             return;
         }
 
-        for (Entity entity : entities) {
-            if (entity.isAlive()) {
-                entity.discard();
-            }
+        playerEntities.remove(eventId);
+
+        if (playerEntities.isEmpty()) {
+            EVENT_ENTITIES.remove(playerId);
         }
     }
 
-    private static void track(
-            ServerPlayer player,
-            Entity entity
-    ) {
-        EVENT_ENTITIES.computeIfAbsent(
-                player.getUUID(),
-                id -> new ArrayList<>()
-        ).add(entity);
-    }
+    // =====================================================
+    // ПОИСК МЕСТА ДЛЯ ПОЯВЛЕНИЯ
+    // =====================================================
 
     private static boolean spawnNearPlayer(
             ServerPlayer player,
@@ -761,6 +991,7 @@ public final class NewEventHandler {
             int maxDistance
     ) {
         for (int attempt = 0; attempt < 40; attempt++) {
+
             double angle = RANDOM.nextDouble() * Math.PI * 2;
 
             double distance = minDistance
@@ -773,21 +1004,46 @@ public final class NewEventHandler {
             int blockX = (int) Math.floor(x);
             int blockZ = (int) Math.floor(z);
 
+            if (!level.hasChunkAt(
+                    new BlockPos(
+                            blockX,
+                            player.blockPosition().getY(),
+                            blockZ
+                    )
+            )) {
+                continue;
+            }
+
             int y = level.getHeight(
                     Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
                     blockX,
                     blockZ
             );
 
-            BlockPos pos = new BlockPos(
-                    blockX,
-                    y,
-                    blockZ
-            );
-
-            if (!level.hasChunkAt(pos)
-                    || y <= level.getMinBuildHeight()
+            if (y <= level.getMinBuildHeight()
                     || y >= level.getMaxBuildHeight() - 3) {
+                continue;
+            }
+
+            BlockPos feet = new BlockPos(blockX, y, blockZ);
+            BlockPos floor = feet.below();
+            BlockPos head = feet.above();
+
+            if (!level.getBlockState(floor).isFaceSturdy(
+                    level,
+                    floor,
+                    net.minecraft.core.Direction.UP
+            )) {
+                continue;
+            }
+
+            if (!level.getBlockState(feet).isAir()
+                    || !level.getBlockState(head).isAir()) {
+                continue;
+            }
+
+            if (!level.getFluidState(feet).isEmpty()
+                    || !level.getFluidState(head).isEmpty()) {
                 continue;
             }
 
@@ -822,6 +1078,7 @@ public final class NewEventHandler {
         double behindZ = -Math.cos(yaw);
 
         for (int attempt = 0; attempt < 40; attempt++) {
+
             double distance = minDistance
                     + RANDOM.nextDouble()
                     * (maxDistance - minDistance);
@@ -832,17 +1089,46 @@ public final class NewEventHandler {
             int blockX = (int) Math.floor(x);
             int blockZ = (int) Math.floor(z);
 
+            if (!level.hasChunkAt(
+                    new BlockPos(
+                            blockX,
+                            player.blockPosition().getY(),
+                            blockZ
+                    )
+            )) {
+                continue;
+            }
+
             int y = level.getHeight(
                     Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
                     blockX,
                     blockZ
             );
 
-            BlockPos pos = new BlockPos(blockX, y, blockZ);
-
-            if (!level.hasChunkAt(pos)
-                    || y <= level.getMinBuildHeight()
+            if (y <= level.getMinBuildHeight()
                     || y >= level.getMaxBuildHeight() - 3) {
+                continue;
+            }
+
+            BlockPos feet = new BlockPos(blockX, y, blockZ);
+            BlockPos floor = feet.below();
+            BlockPos head = feet.above();
+
+            if (!level.getBlockState(floor).isFaceSturdy(
+                    level,
+                    floor,
+                    net.minecraft.core.Direction.UP
+            )) {
+                continue;
+            }
+
+            if (!level.getBlockState(feet).isAir()
+                    || !level.getBlockState(head).isAir()) {
+                continue;
+            }
+
+            if (!level.getFluidState(feet).isEmpty()
+                    || !level.getFluidState(head).isEmpty()) {
                 continue;
             }
 
@@ -863,4 +1149,4 @@ public final class NewEventHandler {
 
         return false;
     }
-}
+        }

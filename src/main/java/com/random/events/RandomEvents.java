@@ -1,3 +1,4 @@
+
 package com.random.events;
 
 import com.random.events.item.ModItems;
@@ -75,6 +76,10 @@ public class RandomEvents {
                             + ", timer=" + remaining
                             + ", initialized=" + initialized
             );
+
+            // Восстанавливаем Золотое благословение,
+            // если его время ещё не закончилось.
+            GoldenBlessingHandler.restore(player);
 
             syncTimer(player);
 
@@ -211,6 +216,13 @@ public class RandomEvents {
                         oldData.getInt(TIMER_KEY)
                 );
             }
+
+            // Переносим данные Золотого благословения
+            // на нового игрока после смерти.
+            GoldenBlessingHandler.copyPlayerData(
+                    event.getOriginal(),
+                    event.getEntity()
+            );
         }
 
         @SubscribeEvent
@@ -219,6 +231,9 @@ public class RandomEvents {
         ) {
             if (event.getEntity() instanceof ServerPlayer player) {
                 syncTimer(player);
+
+                // Возвращаем оставшееся время благословения.
+                GoldenBlessingHandler.restore(player);
             }
         }
 

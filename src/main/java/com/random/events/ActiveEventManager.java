@@ -29,7 +29,8 @@ public final class ActiveEventManager {
 
     private static final double COMBINATION_CHANCE = 0.20;
 
-    private ActiveEventManager() {}
+    private ActiveEventManager() {
+    }
 
     public static void startRandomEvents(ServerPlayer player) {
         List<EventDefinition> allEvents = EventRegistry.getAll();
@@ -71,6 +72,36 @@ public final class ActiveEventManager {
                 LAST_EVENT.put(playerId, second.id());
             }
         }
+    }
+
+    public static boolean startEventById(
+            ServerPlayer player,
+            String eventId
+    ) {
+        EventDefinition definition =
+                EventRegistry.getById(eventId).orElse(null);
+
+        if (definition == null) {
+            player.sendSystemMessage(
+                    Component.literal(
+                            "§c[Random Events] Такое событие не найдено."
+                    )
+            );
+
+            return false;
+        }
+
+        boolean started = startEvent(player, definition);
+
+        if (!started) {
+            player.sendSystemMessage(
+                    Component.literal(
+                            "§e[Random Events] Это событие уже активно."
+                    )
+            );
+        }
+
+        return started;
     }
 
     private static boolean startEvent(
@@ -355,7 +386,9 @@ public final class ActiveEventManager {
     public static class ServerEvents {
 
         @SubscribeEvent
-        public static void onPlayerTick(TickEvent.PlayerTickEvent.Post event) {
+        public static void onPlayerTick(
+                TickEvent.PlayerTickEvent.Post event
+        ) {
             if (!(event.player instanceof ServerPlayer player)) {
                 return;
             }
@@ -378,4 +411,4 @@ public final class ActiveEventManager {
             LAST_EVENT.remove(player.getUUID());
         }
     }
-                }
+        }

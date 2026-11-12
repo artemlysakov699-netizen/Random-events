@@ -46,7 +46,7 @@ public final class GoldenBlessingHandler {
     }
 
     /**
-     * Запускает благословение на 60 секунд.
+     * Запускает золотое благословение на 60 секунд.
      */
     public static void start(ServerPlayer player) {
         long now = getGameTime(player);
@@ -71,7 +71,7 @@ public final class GoldenBlessingHandler {
     }
 
     /**
-     * Обновляет эффекты, пока благословение активно.
+     * Проверяет оставшееся время и обновляет эффекты.
      */
     public static void tick(ServerPlayer player) {
         if (!isActive(player)) {
@@ -91,7 +91,8 @@ public final class GoldenBlessingHandler {
     }
 
     /**
-     * Восстанавливает эффекты после входа или возрождения.
+     * Восстанавливает эффекты после входа на сервер
+     * или возрождения игрока.
      */
     public static void restore(ServerPlayer player) {
         if (!isActive(player)) {
@@ -107,7 +108,7 @@ public final class GoldenBlessingHandler {
     }
 
     /**
-     * Переносит данные благословения при смерти игрока.
+     * Переносит данные события при смерти игрока.
      */
     public static void copyPlayerData(
             net.minecraft.world.entity.player.Player original,
@@ -143,20 +144,30 @@ public final class GoldenBlessingHandler {
      */
     public static long getRemainingTicks(ServerPlayer player) {
         if (!isActive(player)) {
-            return 0;
+            return 0L;
         }
 
         long endTime = player.getPersistentData().getLong(
                 END_TIME_KEY
         );
 
-        return Math.max(0, endTime - getGameTime(player));
+        return Math.max(
+                0L,
+                endTime - getGameTime(player)
+        );
     }
 
     /**
-     * Принудительно завершает благословение.
+     * Завершает событие.
+     *
+     * Удаляет только эффекты, которые были выданы
+     * самим Random Events с нашим усилителем.
      */
     public static void finish(ServerPlayer player) {
+        if (!isActive(player)) {
+            return;
+        }
+
         player.getPersistentData().putBoolean(
                 ACTIVE_KEY,
                 false
@@ -167,9 +178,7 @@ public final class GoldenBlessingHandler {
                 0L
         );
 
-        for (Holder<MobEffect> effect : EFFECTS) {
-            player.removeEffect(effect);
-        }
+        removeOwnEffects(player);
 
         player.sendSystemMessage(
                 net.minecraft.network.chat.Component.literal(
@@ -178,6 +187,10 @@ public final class GoldenBlessingHandler {
         );
     }
 
+    /**
+     * Выдаёт все эффекты благословения
+     * с оставшимся временем события.
+     */
     private static void applyEffects(ServerPlayer player) {
         long remaining = getRemainingTicks(player);
 
@@ -204,6 +217,28 @@ public final class GoldenBlessingHandler {
         }
     }
 
+    /**
+     * Удаляет только эффекты с усилителем,
+     * установленным этим событием.
+     */
+    private static void removeOwnEffects(ServerPlayer player) {
+        for (Holder<MobEffect> effect : EFFECTS) {
+            MobEffectInstance instance = player.getEffect(effect);
+
+            if (instance == null) {
+                continue;
+            }
+
+            if (instance.getAmplifier() == AMPLIFIER) {
+                player.removeEffect(effect);
+            }
+        }
+    }
+
+    /**
+     * Получает игровое время основного мира.
+     * Оно одинаково используется во всех измерениях.
+     */
     private static long getGameTime(ServerPlayer player) {
         MinecraftServer server = player.getServer();
 

@@ -3,7 +3,6 @@ package com.random.events;
 
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.animal.IronGolem;
 
 import net.minecraftforge.event.entity.living.LivingEvent;
@@ -12,30 +11,35 @@ import net.minecraftforge.fml.common.Mod;
 
 public final class TimedEntityHandler {
 
-    private static final String LIFETIME_KEY =
-            "RandomEventsIronDefenderLifetime";
+    private static final String END_TIME_KEY =
+            "RandomEventsIronDefenderEndTime";
 
-    private static final int DEFENDER_LIFETIME_TICKS =
-            60 * 20;
+    private static final long DEFENDER_LIFETIME_TICKS =
+            60L * 20L;
 
     private TimedEntityHandler() {
     }
 
     /**
-     * Устанавливает железному защитнику время жизни — 60 секунд.
-     * Таймер сохраняется в данных самой сущности.
+     * Устанавливает время окончания жизни железного защитника.
+     *
+     * Используется игровое время измерения, поэтому если чанк
+     * временно выгрузится, оставшееся время не начнётся заново.
      */
     public static void setDefenderLifetime(IronGolem golem) {
-        golem.getPersistentData().putInt(
-                LIFETIME_KEY,
-                DEFENDER_LIFETIME_TICKS
+        if (!(golem.level() instanceof ServerLevel level)) {
+            return;
+        }
+
+        long endTime = level.getGameTime()
+                + DEFENDER_LIFETIME_TICKS;
+
+        golem.getPersistentData().putLong(
+                END_TIME_KEY,
+                endTime
         );
     }
 
-    /**
-     * Проверяет таймер каждого живого существа.
-     * Обрабатываются только големы с нашим специальным тегом.
-     */
     @Mod.EventBusSubscriber(
             modid = RandomEvents.MOD_ID,
             bus = Mod.EventBusSubscriber.Bus.FORGE
@@ -54,28 +58,20 @@ public final class TimedEntityHandler {
                 return;
             }
 
-            var data = golem.getPersistentData();
-
-            if (!data.contains(LIFETIME_KEY)) {
-                return;
-            }
-
             if (!(golem.level() instanceof ServerLevel level)) {
                 return;
             }
 
-            int remaining = data.getInt(LIFETIME_KEY);
+            var data = golem.getPersistentData();
 
-            if (remaining <= 0) {
-                removeDefender(golem, level);
+            if (!data.contains(END_TIME_KEY)) {
                 return;
             }
 
-            remaining--;
+            long endTime = data.getLong(END_TIME_KEY);
+            long currentTime = level.getGameTime();
 
-            data.putInt(LIFETIME_KEY, remaining);
-
-            if (remaining <= 0) {
+            if (currentTime >= endTime) {
                 removeDefender(golem, level);
             }
         }
@@ -84,6 +80,10 @@ public final class TimedEntityHandler {
                 IronGolem golem,
                 ServerLevel level
         ) {
+            if (golem.isRemoved()) {
+                return;
+            }
+
             level.sendParticles(
                     ParticleTypes.CLOUD,
                     golem.getX(),

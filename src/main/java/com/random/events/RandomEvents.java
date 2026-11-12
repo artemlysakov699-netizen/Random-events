@@ -1,12 +1,19 @@
 package com.random.events;
 
+import com.random.events.item.ModItems;
+import com.random.events.menu.ModMenus;
 import com.random.events.network.NetworkHandler;
+
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
+
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 
 @Mod(RandomEvents.MOD_ID)
 public class RandomEvents {
@@ -23,6 +30,12 @@ public class RandomEvents {
     private static long serverTickCounter = 0;
 
     public RandomEvents() {
+        IEventBus modEventBus =
+                FMLJavaModLoadingContext.get().getModEventBus();
+
+        ModItems.register(modEventBus);
+        ModMenus.register(modEventBus);
+
         NetworkHandler.register();
 
         System.out.println(
@@ -43,6 +56,8 @@ public class RandomEvents {
             if (!(event.getEntity() instanceof ServerPlayer player)) {
                 return;
             }
+
+            giveEventRemoteIfMissing(player);
 
             var data = player.getPersistentData();
 
@@ -69,6 +84,33 @@ public class RandomEvents {
                                     + "Следующее событие скоро начнётся."
                     )
             );
+        }
+
+        private static void giveEventRemoteIfMissing(
+                ServerPlayer player
+        ) {
+            boolean hasRemote = player.getInventory().items.stream()
+                    .anyMatch(stack ->
+                            stack.is(ModItems.EVENT_REMOTE.get())
+                    );
+
+            if (!hasRemote
+                    && !player.getOffhandItem()
+                            .is(ModItems.EVENT_REMOTE.get())) {
+
+                ItemStack remote =
+                        new ItemStack(ModItems.EVENT_REMOTE.get());
+
+                if (!player.getInventory().add(remote)) {
+                    player.drop(remote, false);
+                }
+
+                player.sendSystemMessage(
+                        Component.literal(
+                                "§6[Random Events] §eТы получил пульт событий!"
+                        )
+                );
+            }
         }
 
         @SubscribeEvent
@@ -199,4 +241,4 @@ public class RandomEvents {
             );
         }
     }
-                    }
+}

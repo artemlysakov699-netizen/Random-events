@@ -1,16 +1,14 @@
+
 package com.random.events;
 
 import com.random.events.EventDefinition.EventType;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.core.Holder;
-import net.minecraft.world.effect.MobEffect;
-import net.minecraft.world.effect.MobEffectInstance;
-import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -39,10 +37,6 @@ public final class NewEventHandler {
 
     private static final Random RANDOM = new Random();
 
-    /*
-     * Существа хранятся отдельно для каждого игрока
-     * и каждого конкретного события.
-     */
     private static final Map<UUID, Map<String, List<Entity>>> EVENT_ENTITIES =
             new HashMap<>();
 
@@ -63,9 +57,6 @@ public final class NewEventHandler {
 
     private static final int EXPERIENCE_RAIN_DURATION = 15 * 20;
     private static final int EXPERIENCE_RAIN_MAX_ORBS = 30;
-
-    private static final int GOLDEN_BLESSING_DURATION = 40;
-    private static final int GOLDEN_BLESSING_AMPLIFIER = 255;
 
     private NewEventHandler() {
     }
@@ -99,10 +90,10 @@ public final class NewEventHandler {
                     startExperienceRain(player);
 
             case GOLDEN_BLESSING ->
-                    startGoldenBlessing(player);
+                    GoldenBlessingHandler.start(player);
 
             case CURSED_CHEST ->
-                    startCursedChest(player);
+                    CursedChestHandler.start(player);
 
             default -> {
             }
@@ -129,7 +120,7 @@ public final class NewEventHandler {
                     tickExperienceRain(player);
 
             case GOLDEN_BLESSING ->
-                    tickGoldenBlessing(player);
+                    GoldenBlessingHandler.tick(player);
 
             default -> {
             }
@@ -152,16 +143,10 @@ public final class NewEventHandler {
                     !player.isAlive();
 
             case SLIME_EPIDEMIC ->
-                    !hasLivingEntities(
-                            playerId,
-                            definition.id()
-                    );
+                    !hasLivingEntities(playerId, definition.id());
 
             case PILLAGER_AMBUSH ->
-                    !hasLivingEntities(
-                            playerId,
-                            definition.id()
-                    );
+                    !hasLivingEntities(playerId, definition.id());
 
             case CURSED_CHEST ->
                     !CursedChestHandler.isActive(player);
@@ -198,11 +183,8 @@ public final class NewEventHandler {
             }
 
             case GOLDEN_BLESSING -> {
-                /*
-                 * Эффекты не удаляем принудительно.
-                 * Последнее наложение постепенно закончится
-                 * самостоятельно.
-                 */
+                // Таймер и завершение управляются
+                // непосредственно GoldenBlessingHandler.
             }
 
             case CURSED_CHEST ->
@@ -227,18 +209,10 @@ public final class NewEventHandler {
         }
     }
 
-    /*
-     * Очистка при выходе игрока.
-     *
-     * Существа не удаляются из мира:
-     * - разрушитель;
-     * - слизни;
-     * - разбойники;
-     * - железный защитник;
-     * - торговец.
-     *
-     * Уже появившиеся сферы опыта также остаются.
-     */
+    // =====================================================
+    // ОЧИСТКА ПРИ ВЫХОДЕ ИГРОКА
+    // =====================================================
+
     public static void cleanupPlayer(ServerPlayer player) {
         UUID playerId = player.getUUID();
 
@@ -251,14 +225,14 @@ public final class NewEventHandler {
 
         MERCHANT_TICKS.remove(playerId);
         MERCHANT_WARNING_SENT.remove(playerId);
-    }
 
-    // =====================================================
-    // ПРОКЛЯТЫЙ СУНДУК
-    // =====================================================
-
-    private static void startCursedChest(ServerPlayer player) {
-        CursedChestHandler.start(player);
+        /*
+         * GoldenBlessingHandler не очищаем:
+         * время благословения хранится в PersistentData игрока.
+         *
+         * Таймер железного защитника хранится непосредственно
+         * в PersistentData самого голема.
+         */
     }
 
     // =====================================================
@@ -275,9 +249,7 @@ public final class NewEventHandler {
         int spawned = 0;
 
         player.sendSystemMessage(
-                Component.literal(
-                        "§c§l[Random Events] ЗАСАДА!"
-                )
+                Component.literal("§c§l[Random Events] ЗАСАДА!")
         );
 
         for (int i = 0; i < count; i++) {
@@ -449,6 +421,10 @@ public final class NewEventHandler {
             return;
         }
 
+        // Назначаем независимый таймер на 60 секунд.
+        // Он продолжит работать, даже если игрок выйдет.
+        TimedEntityHandler.setDefenderLifetime(golem);
+
         track(player, definition, golem);
 
         level.sendParticles(
@@ -563,10 +539,6 @@ public final class NewEventHandler {
             return;
         }
 
-        /*
-         * Не устанавливаем persistenceRequired:
-         * торговец должен исчезнуть по своему таймеру.
-         */
         trader.setDespawnDelay(MERCHANT_DURATION);
 
         addMerchantTrade(
@@ -749,10 +721,7 @@ public final class NewEventHandler {
                     level.getMaxBuildHeight() - 2
             );
 
-            /*
-             * Значение 2 означает 2 единицы опыта
-             * за каждую сферу.
-             */
+            // Каждая сфера даёт 2 единицы опыта.
             ExperienceOrb orb = new ExperienceOrb(
                     level,
                     x,
@@ -767,114 +736,6 @@ public final class NewEventHandler {
         EXPERIENCE_ORBS_SPAWNED.put(
                 playerId,
                 spawned + amount
-        );
-    }
-
-    // =====================================================
-    // ЗОЛОТОЕ БЛАГОСЛОВЕНИЕ
-    // =====================================================
-
-    private static void startGoldenBlessing(ServerPlayer player) {
-        player.sendSystemMessage(
-                Component.literal(
-                        "§6[Random Events] §eЗолотое благословение!"
-                )
-        );
-
-        tickGoldenBlessing(player);
-    }
-
-    private static void tickGoldenBlessing(ServerPlayer player) {
-        int duration = GOLDEN_BLESSING_DURATION;
-        int amplifier = GOLDEN_BLESSING_AMPLIFIER;
-
-        // Скорость
-        applyBlessing(player, MobEffects.MOVEMENT_SPEED,
-                duration, amplifier);
-
-        // Ускорение добычи
-        applyBlessing(player, MobEffects.DIG_SPEED,
-                duration, amplifier);
-
-        // Сила
-        applyBlessing(player, MobEffects.DAMAGE_BOOST,
-                duration, amplifier);
-
-        // Прыгучесть
-        applyBlessing(player, MobEffects.JUMP,
-                duration, amplifier);
-
-        // Регенерация
-        applyBlessing(player, MobEffects.REGENERATION,
-                duration, amplifier);
-
-        // Сопротивление урону
-        applyBlessing(player, MobEffects.DAMAGE_RESISTANCE,
-                duration, amplifier);
-
-        // Огнестойкость
-        applyBlessing(player, MobEffects.FIRE_RESISTANCE,
-                duration, amplifier);
-
-        // Подводное дыхание
-        applyBlessing(player, MobEffects.WATER_BREATHING,
-                duration, amplifier);
-
-        // Невидимость
-        applyBlessing(player, MobEffects.INVISIBILITY,
-                duration, amplifier);
-
-        // Ночное зрение
-        applyBlessing(player, MobEffects.NIGHT_VISION,
-                duration, amplifier);
-
-        // Увеличение здоровья
-        applyBlessing(player, MobEffects.HEALTH_BOOST,
-                duration, amplifier);
-
-        // Поглощение
-        applyBlessing(player, MobEffects.ABSORPTION,
-                duration, amplifier);
-
-        // Насыщение
-        applyBlessing(player, MobEffects.SATURATION,
-                duration, amplifier);
-
-        // Удача
-        applyBlessing(player, MobEffects.LUCK,
-                duration, amplifier);
-
-        // Медленное падение
-        applyBlessing(player, MobEffects.SLOW_FALLING,
-                duration, amplifier);
-
-        // Сила проводника
-        applyBlessing(player, MobEffects.CONDUIT_POWER,
-                duration, amplifier);
-
-        // Грация дельфина
-        applyBlessing(player, MobEffects.DOLPHINS_GRACE,
-                duration, amplifier);
-
-        // Герой деревни
-        applyBlessing(player, MobEffects.HERO_OF_THE_VILLAGE,
-                duration, amplifier);
-    }
-
-    private static void applyBlessing(
-            ServerPlayer player,
-            Holder<MobEffect> effect,
-            int duration,
-            int amplifier
-    ) {
-        player.addEffect(
-                new MobEffectInstance(
-                        effect,
-                        duration,
-                        amplifier,
-                        false,
-                        true
-                )
         );
     }
 
@@ -935,9 +796,6 @@ public final class NewEventHandler {
         return false;
     }
 
-    /*
-     * Удаляет только существ конкретного события.
-     */
     private static void removeTrackedEntities(
             UUID playerId,
             String eventId
@@ -958,9 +816,6 @@ public final class NewEventHandler {
         forgetTrackedEntities(playerId, eventId);
     }
 
-    /*
-     * Удаляет записи отслеживания, но не самих существ.
-     */
     private static void forgetTrackedEntities(
             UUID playerId,
             String eventId
@@ -1004,13 +859,13 @@ public final class NewEventHandler {
             int blockX = (int) Math.floor(x);
             int blockZ = (int) Math.floor(z);
 
-            if (!level.hasChunkAt(
-                    new BlockPos(
-                            blockX,
-                            player.blockPosition().getY(),
-                            blockZ
-                    )
-            )) {
+            BlockPos checkPos = new BlockPos(
+                    blockX,
+                    player.blockPosition().getY(),
+                    blockZ
+            );
+
+            if (!level.hasChunkAt(checkPos)) {
                 continue;
             }
 
@@ -1032,7 +887,7 @@ public final class NewEventHandler {
             if (!level.getBlockState(floor).isFaceSturdy(
                     level,
                     floor,
-                    net.minecraft.core.Direction.UP
+                    Direction.UP
             )) {
                 continue;
             }
@@ -1089,13 +944,13 @@ public final class NewEventHandler {
             int blockX = (int) Math.floor(x);
             int blockZ = (int) Math.floor(z);
 
-            if (!level.hasChunkAt(
-                    new BlockPos(
-                            blockX,
-                            player.blockPosition().getY(),
-                            blockZ
-                    )
-            )) {
+            BlockPos checkPos = new BlockPos(
+                    blockX,
+                    player.blockPosition().getY(),
+                    blockZ
+            );
+
+            if (!level.hasChunkAt(checkPos)) {
                 continue;
             }
 
@@ -1117,7 +972,7 @@ public final class NewEventHandler {
             if (!level.getBlockState(floor).isFaceSturdy(
                     level,
                     floor,
-                    net.minecraft.core.Direction.UP
+                    Direction.UP
             )) {
                 continue;
             }
@@ -1149,4 +1004,4 @@ public final class NewEventHandler {
 
         return false;
     }
-        }
+}

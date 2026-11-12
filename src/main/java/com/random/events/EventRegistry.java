@@ -1,4 +1,3 @@
-
 package com.random.events;
 
 import com.random.events.EventDefinition.EventType;
@@ -10,7 +9,9 @@ public final class EventRegistry {
 
     private static final List<EventDefinition> EVENTS = List.of(
 
-            // Обычные события
+            // =========================
+            // ОБЫЧНЫЕ СОБЫТИЯ
+            // =========================
 
             new EventDefinition(
                     "super_speed",
@@ -32,7 +33,9 @@ public final class EventRegistry {
                     EventType.JUMP_BOOST
             ),
 
-            // Редкие события
+            // =========================
+            // РЕДКИЕ СОБЫТИЯ
+            // =========================
 
             new EventDefinition(
                     "regeneration",
@@ -104,7 +107,29 @@ public final class EventRegistry {
                     EventType.EXPERIENCE_FEVER
             ),
 
-            // Сверх редкие события
+            new EventDefinition(
+                    "experience_rain",
+                    "Опытный дождь",
+                    EventRarity.RARE,
+                    7,
+                    15 * 20,
+                    false,
+                    EventType.EXPERIENCE_RAIN
+            ),
+
+            new EventDefinition(
+                    "pillager_ambush",
+                    "Засада разбойников",
+                    EventRarity.RARE,
+                    6,
+                    120 * 20,
+                    false,
+                    EventType.PILLAGER_AMBUSH
+            ),
+
+            // =========================
+            // СВЕРХРЕДКИЕ СОБЫТИЯ
+            // =========================
 
             new EventDefinition(
                     "weakness",
@@ -176,7 +201,9 @@ public final class EventRegistry {
                     EventType.TRAPPED_CHEST
             ),
 
-            // Эпические события
+            // =========================
+            // ЭПИЧЕСКИЕ СОБЫТИЯ
+            // =========================
 
             new EventDefinition(
                     "chicken_rain",
@@ -208,7 +235,29 @@ public final class EventRegistry {
                     EventType.WATERDROP
             ),
 
-            // Мифические события
+            new EventDefinition(
+                    "mysterious_merchant",
+                    "Загадочный торговец",
+                    EventRarity.EPIC,
+                    5,
+                    5 * 60 * 20,
+                    false,
+                    EventType.MYSTERIOUS_MERCHANT
+            ),
+
+            new EventDefinition(
+                    "slime_epidemic",
+                    "Слизневая эпидемия",
+                    EventRarity.EPIC,
+                    5,
+                    0,
+                    false,
+                    EventType.SLIME_EPIDEMIC
+            ),
+
+            // =========================
+            // МИФИЧЕСКИЕ СОБЫТИЯ
+            // =========================
 
             new EventDefinition(
                     "warden_hunt",
@@ -230,7 +279,29 @@ public final class EventRegistry {
                     EventType.ZOMBIE_BOSS
             ),
 
-            // Легендарные события
+            new EventDefinition(
+                    "ravager_wrath",
+                    "Ярость разрушителя",
+                    EventRarity.MYTHIC,
+                    4,
+                    0,
+                    false,
+                    EventType.RAVAGER_WRATH
+            ),
+
+            new EventDefinition(
+                    "cursed_chest",
+                    "Проклятый сундук",
+                    EventRarity.MYTHIC,
+                    4,
+                    0,
+                    false,
+                    EventType.CURSED_CHEST
+            ),
+
+            // =========================
+            // ЛЕГЕНДАРНЫЕ СОБЫТИЯ
+            // =========================
 
             new EventDefinition(
                     "meteor_shower",
@@ -240,6 +311,26 @@ public final class EventRegistry {
                     120 * 20,
                     false,
                     EventType.METEOR_SHOWER
+            ),
+
+            new EventDefinition(
+                    "iron_defender",
+                    "Железный защитник",
+                    EventRarity.LEGENDARY,
+                    3,
+                    60 * 20,
+                    false,
+                    EventType.IRON_DEFENDER
+            ),
+
+            new EventDefinition(
+                    "golden_blessing",
+                    "Золотое благословение",
+                    EventRarity.LEGENDARY,
+                    3,
+                    60 * 20,
+                    false,
+                    EventType.GOLDEN_BLESSING
             )
     );
 
@@ -258,9 +349,7 @@ public final class EventRegistry {
                 .toList();
     }
 
-    public static Optional<EventDefinition> getById(
-            String id
-    ) {
+    public static Optional<EventDefinition> getById(String id) {
         return EVENTS.stream()
                 .filter(event -> event.id().equals(id))
                 .findFirst();
@@ -269,4 +358,4 @@ public final class EventRegistry {
     public static int getEventCount() {
         return EVENTS.size();
     }
-}
+        }

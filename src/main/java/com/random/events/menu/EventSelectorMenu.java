@@ -1,3 +1,4 @@
+
 package com.random.events.menu;
 
 import com.random.events.ActiveEventManager;
@@ -6,13 +7,13 @@ import com.random.events.EventRegistry;
 import com.random.events.EventDefinition.EventType;
 
 import net.minecraft.ChatFormatting;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ClickType;
-import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -44,21 +45,18 @@ public class EventSelectorMenu extends AbstractContainerMenu {
                     getIcon(definition.type())
             );
 
-            icon.setHoverName(
-                    Component.literal(definition.name())
-                            .withStyle(
-                                    net.minecraft.network.chat.Style.EMPTY
-                                            .withColor(
-                                                    definition.rarity().getColor()
-                                            )
-                            )
-                            .append(
-                                    Component.literal(
-                                            " [" + definition.rarity()
-                                                    .getDisplayName() + "]"
-                                    ).withStyle(ChatFormatting.GRAY)
-                            )
-            );
+            Component displayName = Component.literal(definition.name())
+                    .withStyle(style -> style.withColor(
+                            definition.rarity().getColor()
+                    ))
+                    .append(
+                            Component.literal(
+                                    " [" + definition.rarity()
+                                            .getDisplayName() + "]"
+                            ).withStyle(ChatFormatting.GRAY)
+                    );
+
+            icon.set(DataComponents.CUSTOM_NAME, displayName);
 
             menuContainer.setItem(i, icon);
         }
@@ -163,4 +161,4 @@ public class EventSelectorMenu extends AbstractContainerMenu {
     public boolean stillValid(Player player) {
         return true;
     }
-      }
+}

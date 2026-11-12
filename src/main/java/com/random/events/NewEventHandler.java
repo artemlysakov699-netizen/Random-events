@@ -1,8 +1,6 @@
 
 package com.random.events;
 
-import com.random.events.EventDefinition.EventType;
-
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
@@ -46,6 +44,9 @@ public final class NewEventHandler {
     private static final Map<UUID, Integer> EXPERIENCE_ORBS_SPAWNED =
             new HashMap<>();
 
+    private static final Map<UUID, Integer> EXPERIENCE_RAIN_TARGETS =
+            new HashMap<>();
+
     private static final Map<UUID, Integer> MERCHANT_TICKS =
             new HashMap<>();
 
@@ -56,6 +57,7 @@ public final class NewEventHandler {
     private static final int MERCHANT_WARNING_TIME = 60 * 20;
 
     private static final int EXPERIENCE_RAIN_DURATION = 15 * 20;
+    private static final int EXPERIENCE_RAIN_MIN_ORBS = 20;
     private static final int EXPERIENCE_RAIN_MAX_ORBS = 30;
 
     private NewEventHandler() {
@@ -170,12 +172,15 @@ public final class NewEventHandler {
             case EXPERIENCE_RAIN -> {
                 EXPERIENCE_RAIN_TICKS.remove(playerId);
                 EXPERIENCE_ORBS_SPAWNED.remove(playerId);
+                EXPERIENCE_RAIN_TARGETS.remove(playerId);
             }
 
             case MYSTERIOUS_MERCHANT -> {
                 MERCHANT_TICKS.remove(playerId);
                 MERCHANT_WARNING_SENT.remove(playerId);
 
+                // Торговца не удаляем:
+                // его собственный таймер завершит его жизнь.
                 forgetTrackedEntities(
                         playerId,
                         definition.id()
@@ -183,8 +188,7 @@ public final class NewEventHandler {
             }
 
             case GOLDEN_BLESSING -> {
-                // Таймер и завершение управляются
-                // непосредственно GoldenBlessingHandler.
+                // Таймер управляется GoldenBlessingHandler.
             }
 
             case CURSED_CHEST ->
@@ -222,16 +226,15 @@ public final class NewEventHandler {
 
         EXPERIENCE_RAIN_TICKS.remove(playerId);
         EXPERIENCE_ORBS_SPAWNED.remove(playerId);
+        EXPERIENCE_RAIN_TARGETS.remove(playerId);
 
         MERCHANT_TICKS.remove(playerId);
         MERCHANT_WARNING_SENT.remove(playerId);
 
         /*
-         * GoldenBlessingHandler не очищаем:
-         * время благословения хранится в PersistentData игрока.
-         *
-         * Таймер железного защитника хранится непосредственно
-         * в PersistentData самого голема.
+         * Благословение хранится в PersistentData игрока.
+         * Таймер железного защитника хранится у самого голема.
+         * Таймер торговца хранится у самого торговца.
          */
     }
 
@@ -421,8 +424,6 @@ public final class NewEventHandler {
             return;
         }
 
-        // Назначаем независимый таймер на 60 секунд.
-        // Он продолжит работать, даже если игрок выйдет.
         TimedEntityHandler.setDefenderLifetime(golem);
 
         track(player, definition, golem);
@@ -491,7 +492,6 @@ public final class NewEventHandler {
             double closestDistance = Double.MAX_VALUE;
 
             for (Mob hostile : nearby) {
-
                 double distance = golem.distanceToSqr(hostile);
 
                 if (distance < closestDistance) {
@@ -535,43 +535,38 @@ public final class NewEventHandler {
                             "§c[Random Events] Не удалось найти место для торговца."
                     )
             );
-
             return;
         }
 
-        trader.setDespawnDelay(MERCHANT_DURATION);
+        // Независимый таймер на 5 минут.
+        TimedTraderHandler.setLifetime(trader);
 
         addMerchantTrade(
                 trader,
-                new ItemStack(Items.DIAMOND, 3),
                 randomEmeraldPrice(),
                 new ItemStack(Items.NETHERITE_INGOT)
         );
 
         addMerchantTrade(
                 trader,
-                new ItemStack(Items.DIAMOND, 2),
                 randomEmeraldPrice(),
                 new ItemStack(Items.ENCHANTED_GOLDEN_APPLE)
         );
 
         addMerchantTrade(
                 trader,
-                new ItemStack(Items.DIAMOND, 2),
                 randomEmeraldPrice(),
                 new ItemStack(Items.TOTEM_OF_UNDYING)
         );
 
         addMerchantTrade(
                 trader,
-                new ItemStack(Items.DIAMOND, 1),
                 randomEmeraldPrice(),
                 new ItemStack(Items.ELYTRA)
         );
 
         addMerchantTrade(
                 trader,
-                new ItemStack(Items.DIAMOND, 2),
                 randomEmeraldPrice(),
                 new ItemStack(Items.DIAMOND_CHESTPLATE)
         );
@@ -601,7 +596,6 @@ public final class NewEventHandler {
 
     private static void addMerchantTrade(
             WanderingTrader trader,
-            ItemStack additionalCost,
             int emeraldCost,
             ItemStack result
     ) {
@@ -612,7 +606,6 @@ public final class NewEventHandler {
 
         MerchantOffer offer = new MerchantOffer(
                 emeralds,
-                additionalCost,
                 result,
                 1,
                 30,
@@ -662,6 +655,17 @@ public final class NewEventHandler {
         EXPERIENCE_RAIN_TICKS.put(playerId, 0);
         EXPERIENCE_ORBS_SPAWNED.put(playerId, 0);
 
+        int target = EXPERIENCE_RAIN_MIN_ORBS
+                + RANDOM.nextInt(
+                        EXPERIENCE_RAIN_MAX_ORBS
+                                - EXPERIENCE_RAIN_MIN_ORBS + 1
+                );
+
+        EXPERIENCE_RAIN_TARGETS.put(
+                playerId,
+                target
+        );
+
         player.sendSystemMessage(
                 Component.literal(
                         "§a[Random Events] §eНачался опытный дождь!"
@@ -677,6 +681,11 @@ public final class NewEventHandler {
                 0
         );
 
+        int target = EXPERIENCE_RAIN_TARGETS.getOrDefault(
+                playerId,
+                EXPERIENCE_RAIN_MIN_ORBS
+        );
+
         if (elapsed >= EXPERIENCE_RAIN_DURATION) {
             return;
         }
@@ -688,7 +697,9 @@ public final class NewEventHandler {
                 elapsed
         );
 
-        if (elapsed % 10 != 0) {
+        // Равномерно распределяем сферы по всем 15 секундам.
+        if (elapsed % 10 != 0
+                && elapsed != EXPERIENCE_RAIN_DURATION) {
             return;
         }
 
@@ -697,13 +708,13 @@ public final class NewEventHandler {
                 0
         );
 
-        if (spawned >= EXPERIENCE_RAIN_MAX_ORBS) {
-            return;
-        }
+        int desiredTotal = (int) Math.ceil(
+                (double) target * elapsed / EXPERIENCE_RAIN_DURATION
+        );
 
-        int amount = Math.min(
-                2 + RANDOM.nextInt(3),
-                EXPERIENCE_RAIN_MAX_ORBS - spawned
+        int amount = Math.max(
+                0,
+                desiredTotal - spawned
         );
 
         ServerLevel level = player.serverLevel();
@@ -721,7 +732,8 @@ public final class NewEventHandler {
                     level.getMaxBuildHeight() - 2
             );
 
-            // Каждая сфера даёт 2 единицы опыта.
+            // Обычная малая сфера даёт 1 XP.
+            // Здесь каждая сфера даёт 2 XP.
             ExperienceOrb orb = new ExperienceOrb(
                     level,
                     x,

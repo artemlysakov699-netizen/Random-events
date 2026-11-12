@@ -1,272 +1,412 @@
 
 package com.random.events;
 
-import com.random.events.EventDefinition.EventType;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.TextColor;
+import net.minecraft.server.level.ServerPlayer;
 
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
+import java.util.Random;
+import java.util.UUID;
 
-public final class EventRegistry {
+@Mod.EventBusSubscriber(
+        modid = RandomEvents.MOD_ID,
+        bus = Mod.EventBusSubscriber.Bus.FORGE
+)
+public final class ActiveEventManager {
 
-    private static final List<EventDefinition> EVENTS = List.of(
+    private static final Random RANDOM = new Random();
 
-            // Обычные события
+    private static final Map<UUID, List<ActiveEvent>> ACTIVE_EVENTS =
+            new HashMap<>();
 
-            new EventDefinition(
-                    "super_speed",
-                    "Сверхскорость",
-                    EventRarity.COMMON,
-                    10,
-                    60 * 20,
-                    true,
-                    EventType.SUPER_SPEED
-            ),
+    private static final Map<UUID, String> LAST_EVENT =
+            new HashMap<>();
 
-            new EventDefinition(
-                    "jump_boost",
-                    "Прыгучесть",
-                    EventRarity.COMMON,
-                    10,
-                    60 * 20,
-                    true,
-                    EventType.JUMP_BOOST
-            ),
+    private static final double COMBINATION_CHANCE = 0.20;
 
-            // Редкие события
-
-            new EventDefinition(
-                    "regeneration",
-                    "Восстановление",
-                    EventRarity.RARE,
-                    10,
-                    60 * 20,
-                    true,
-                    EventType.REGENERATION
-            ),
-
-            new EventDefinition(
-                    "zombie_horde",
-                    "Орда зомби",
-                    EventRarity.RARE,
-                    8,
-                    60 * 20,
-                    false,
-                    EventType.ZOMBIE_HORDE
-            ),
-
-            new EventDefinition(
-                    "spider_hunt",
-                    "Паучья охота",
-                    EventRarity.RARE,
-                    8,
-                    60 * 20,
-                    false,
-                    EventType.SPIDER_HUNT
-            ),
-
-            new EventDefinition(
-                    "wrath_of_sky",
-                    "Гнев небес",
-                    EventRarity.RARE,
-                    7,
-                    45 * 20,
-                    false,
-                    EventType.WRATH_OF_SKY
-            ),
-
-            new EventDefinition(
-                    "dense_fog",
-                    "Густой туман",
-                    EventRarity.RARE,
-                    8,
-                    60 * 20,
-                    true,
-                    EventType.DENSE_FOG
-            ),
-
-            new EventDefinition(
-                    "gift_of_fate",
-                    "Подарок судьбы",
-                    EventRarity.RARE,
-                    7,
-                    20 * 20,
-                    false,
-                    EventType.GIFT_OF_FATE
-            ),
-
-            new EventDefinition(
-                    "experience_fever",
-                    "Опытная лихорадка",
-                    EventRarity.RARE,
-                    7,
-                    90 * 20,
-                    true,
-                    EventType.EXPERIENCE_FEVER
-            ),
-
-            // Сверх редкие события
-
-            new EventDefinition(
-                    "weakness",
-                    "Слабость",
-                    EventRarity.SUPER_RARE,
-                    8,
-                    45 * 20,
-                    true,
-                    EventType.WEAKNESS
-            ),
-
-            new EventDefinition(
-                    "slowness",
-                    "Замедление",
-                    EventRarity.SUPER_RARE,
-                    8,
-                    45 * 20,
-                    true,
-                    EventType.SLOWNESS
-            ),
-
-            new EventDefinition(
-                    "hunger",
-                    "Внезапный голод",
-                    EventRarity.SUPER_RARE,
-                    8,
-                    45 * 20,
-                    true,
-                    EventType.HUNGER
-            ),
-
-            new EventDefinition(
-                    "solar_burst",
-                    "Солнечный всплеск",
-                    EventRarity.SUPER_RARE,
-                    7,
-                    60 * 20,
-                    false,
-                    EventType.SOLAR_BURST
-            ),
-
-            new EventDefinition(
-                    "creeper_ambush",
-                    "Криперская засада",
-                    EventRarity.SUPER_RARE,
-                    6,
-                    60 * 20,
-                    false,
-                    EventType.CREEPER_AMBUSH
-            ),
-
-            new EventDefinition(
-                    "helpers",
-                    "Помощники",
-                    EventRarity.SUPER_RARE,
-                    6,
-                    30 * 20,
-                    false,
-                    EventType.HELPERS
-            ),
-
-            new EventDefinition(
-                    "trapped_chest",
-                    "Сундук-обманка",
-                    EventRarity.SUPER_RARE,
-                    6,
-                    60 * 20,
-                    false,
-                    EventType.TRAPPED_CHEST
-            ),
-
-            // Эпические события
-
-            new EventDefinition(
-                    "chicken_rain",
-                    "Куриный десант",
-                    EventRarity.EPIC,
-                    8,
-                    30 * 20,
-                    false,
-                    EventType.CHICKEN_RAIN
-            ),
-
-            new EventDefinition(
-                    "blessing",
-                    "Благословение",
-                    EventRarity.EPIC,
-                    8,
-                    60 * 20,
-                    true,
-                    EventType.BLESSING
-            ),
-
-            new EventDefinition(
-                    "waterdrop",
-                    "Ватердроп",
-                    EventRarity.EPIC,
-                    5,
-                    30 * 20,
-                    false,
-                    EventType.WATERDROP
-            ),
-
-            // Мифические события
-
-            new EventDefinition(
-                    "warden_hunt",
-                    "Тише, он всё слышит",
-                    EventRarity.MYTHIC,
-                    6,
-                    60 * 20,
-                    false,
-                    EventType.WARDEN_HUNT
-            ),
-
-            new EventDefinition(
-                    "zombie_boss",
-                    "Зомби-босс",
-                    EventRarity.MYTHIC,
-                    5,
-                    90 * 20,
-                    false,
-                    EventType.ZOMBIE_BOSS
-            ),
-
-            // Легендарные события
-
-            new EventDefinition(
-                    "meteor_shower",
-                    "Метеоритный дождь",
-                    EventRarity.LEGENDARY,
-                    3,
-                    120 * 20,
-                    false,
-                    EventType.METEOR_SHOWER
-            )
-    );
-
-    private EventRegistry() {
+    private ActiveEventManager() {
     }
 
-    public static List<EventDefinition> getAll() {
-        return EVENTS;
+    /**
+     * Запускает случайное событие для игрока.
+     */
+    public static void startRandomEvents(ServerPlayer player) {
+
+        UUID playerId = player.getUUID();
+
+        List<EventDefinition> availableEvents =
+                EventRegistry.getAll();
+
+        if (availableEvents.isEmpty()) {
+            return;
+        }
+
+        String lastEventId = LAST_EVENT.get(playerId);
+
+        EventDefinition firstEvent = selectWeighted(
+                availableEvents,
+                lastEventId
+        );
+
+        if (firstEvent == null) {
+            return;
+        }
+
+        startEvent(player, firstEvent);
+
+        LAST_EVENT.put(playerId, firstEvent.id());
+
+        /*
+         * Иногда запускается второе совместимое событие.
+         */
+        if (firstEvent.canCombine()
+                && RANDOM.nextDouble() < COMBINATION_CHANCE) {
+
+            List<EventDefinition> compatibleEvents =
+                    availableEvents.stream()
+                            .filter(EventDefinition::canCombine)
+                            .filter(event ->
+                                    !event.id().equals(firstEvent.id())
+                            )
+                            .toList();
+
+            EventDefinition secondEvent = selectWeighted(
+                    compatibleEvents,
+                    LAST_EVENT.get(playerId)
+            );
+
+            if (secondEvent != null) {
+                startEvent(player, secondEvent);
+                LAST_EVENT.put(playerId, secondEvent.id());
+            }
+        }
     }
 
-    public static List<EventDefinition> getByRarity(
-            EventRarity rarity
+    /**
+     * Запускает конкретное событие.
+     */
+    public static void startEvent(
+            ServerPlayer player,
+            EventDefinition definition
     ) {
-        return EVENTS.stream()
-                .filter(event -> event.rarity() == rarity)
+
+        UUID playerId = player.getUUID();
+
+        List<ActiveEvent> playerEvents =
+                ACTIVE_EVENTS.computeIfAbsent(
+                        playerId,
+                        id -> new ArrayList<>()
+                );
+
+        boolean alreadyActive = playerEvents.stream()
+                .anyMatch(active ->
+                        active.definition.id().equals(definition.id())
+                );
+
+        if (alreadyActive) {
+            return;
+        }
+
+        ActiveEvent activeEvent = new ActiveEvent(
+                definition,
+                definition.durationTicks()
+        );
+
+        playerEvents.add(activeEvent);
+
+        sendStartMessage(player, definition);
+
+        System.out.println(
+                "[Random Events] Started: "
+                        + definition.name()
+                        + " for "
+                        + player.getGameProfile().getName()
+        );
+    }
+
+    /**
+     * Обрабатывает активные события игрока.
+     */
+    public static void tickPlayer(ServerPlayer player) {
+
+        UUID playerId = player.getUUID();
+
+        List<ActiveEvent> playerEvents =
+                ACTIVE_EVENTS.get(playerId);
+
+        if (playerEvents == null || playerEvents.isEmpty()) {
+            return;
+        }
+
+        Iterator<ActiveEvent> iterator =
+                playerEvents.iterator();
+
+        while (iterator.hasNext()) {
+
+            ActiveEvent activeEvent = iterator.next();
+
+            activeEvent.remainingTicks--;
+
+            if (activeEvent.remainingTicks <= 0) {
+
+                sendEndMessage(
+                        player,
+                        activeEvent.definition
+                );
+
+                System.out.println(
+                        "[Random Events] Finished: "
+                                + activeEvent.definition.name()
+                                + " for "
+                                + player.getGameProfile().getName()
+                );
+
+                iterator.remove();
+            }
+        }
+
+        if (playerEvents.isEmpty()) {
+            ACTIVE_EVENTS.remove(playerId);
+        }
+    }
+
+    /**
+     * Завершает все активные события игрока.
+     */
+    public static void endAllEvents(ServerPlayer player) {
+
+        UUID playerId = player.getUUID();
+
+        List<ActiveEvent> playerEvents =
+                ACTIVE_EVENTS.remove(playerId);
+
+        if (playerEvents == null) {
+            return;
+        }
+
+        for (ActiveEvent activeEvent : playerEvents) {
+
+            sendEndMessage(
+                    player,
+                    activeEvent.definition
+            );
+        }
+    }
+
+    /**
+     * Возвращает список активных событий игрока.
+     */
+    public static List<EventDefinition> getActiveEvents(
+            UUID playerId
+    ) {
+
+        List<ActiveEvent> playerEvents =
+                ACTIVE_EVENTS.get(playerId);
+
+        if (playerEvents == null) {
+            return List.of();
+        }
+
+        return playerEvents.stream()
+                .map(active -> active.definition)
                 .toList();
     }
 
-    public static Optional<EventDefinition> getById(
-            String id
+    /**
+     * Возвращает оставшееся время события.
+     */
+    public static int getRemainingTicks(
+            UUID playerId,
+            String eventId
     ) {
-        return EVENTS.stream()
-                .filter(event -> event.id().equals(id))
-                .findFirst();
+
+        List<ActiveEvent> playerEvents =
+                ACTIVE_EVENTS.get(playerId);
+
+        if (playerEvents == null) {
+            return 0;
+        }
+
+        for (ActiveEvent activeEvent : playerEvents) {
+
+            if (activeEvent.definition.id().equals(eventId)) {
+                return Math.max(0, activeEvent.remainingTicks);
+            }
+        }
+
+        return 0;
     }
 
-    public static int getEventCount() {
-        return EVENTS.size();
+    /**
+     * Выбирает событие с учётом веса редкости и самого события.
+     */
+    private static EventDefinition selectWeighted(
+            List<EventDefinition> events,
+            String excludedId
+    ) {
+
+        List<EventDefinition> candidates = events.stream()
+                .filter(event ->
+                        excludedId == null
+                                || !event.id().equals(excludedId)
+                )
+                .toList();
+
+        if (candidates.isEmpty()) {
+            candidates = events;
+        }
+
+        if (candidates.isEmpty()) {
+            return null;
+        }
+
+        long totalWeight = 0;
+
+        for (EventDefinition event : candidates) {
+
+            totalWeight +=
+                    (long) event.weight()
+                            * event.rarity().getWeight();
+        }
+
+        if (totalWeight <= 0) {
+            return candidates.get(0);
+        }
+
+        long randomValue = RANDOM.nextLong(totalWeight);
+
+        for (EventDefinition event : candidates) {
+
+            long currentWeight =
+                    (long) event.weight()
+                            * event.rarity().getWeight();
+
+            randomValue -= currentWeight;
+
+            if (randomValue < 0) {
+                return event;
+            }
+        }
+
+        return candidates.get(0);
+    }
+
+    /**
+     * Уведомление о запуске события.
+     */
+    private static void sendStartMessage(
+            ServerPlayer player,
+            EventDefinition definition
+    ) {
+
+        Component prefix = Component.literal("[Random Events] ")
+                .withStyle(ChatFormatting.GOLD);
+
+        Component eventName = Component.literal(definition.name())
+                .withStyle(
+                        Style.EMPTY.withColor(
+                                TextColor.fromRgb(
+                                        definition.rarity().getColor()
+                                )
+                        )
+                );
+
+        Component rarity = Component.literal(
+                        " (" + definition.rarity().getDisplayName() + ")"
+                )
+                .withStyle(ChatFormatting.GRAY);
+
+        player.sendSystemMessage(
+                prefix.copy()
+                        .append(eventName)
+                        .append(rarity)
+        );
+    }
+
+    /**
+     * Уведомление о завершении события.
+     */
+    private static void sendEndMessage(
+            ServerPlayer player,
+            EventDefinition definition
+    ) {
+
+        Component message = Component.literal(
+                        "[Random Events] Событие завершено: "
+                )
+                .withStyle(ChatFormatting.GRAY)
+                .append(
+                        Component.literal(definition.name())
+                                .withStyle(
+                                        Style.EMPTY.withColor(
+                                                TextColor.fromRgb(
+                                                        definition.rarity().getColor()
+                                                )
+                                        )
+                                )
+                );
+
+        player.sendSystemMessage(message);
+    }
+
+    /**
+     * Обработка активных событий.
+     */
+    @SubscribeEvent
+    public static void onPlayerTick(
+            TickEvent.PlayerTickEvent.Post event
+    ) {
+
+        if (!(event.player instanceof ServerPlayer player)) {
+            return;
+        }
+
+        tickPlayer(player);
+    }
+
+    /**
+     * Очистка данных при выходе игрока.
+     */
+    @SubscribeEvent
+    public static void onPlayerLogout(
+            PlayerEvent.PlayerLoggedOutEvent event
+    ) {
+
+        if (!(event.getEntity() instanceof ServerPlayer player)) {
+            return;
+        }
+
+        endAllEvents(player);
+        LAST_EVENT.remove(player.getUUID());
+    }
+
+    /**
+     * Внутреннее состояние одного активного события.
+     */
+    private static final class ActiveEvent {
+
+        private final EventDefinition definition;
+        private int remainingTicks;
+
+        private ActiveEvent(
+                EventDefinition definition,
+                int remainingTicks
+        ) {
+
+            this.definition = definition;
+            this.remainingTicks = remainingTicks;
+        }
     }
 }

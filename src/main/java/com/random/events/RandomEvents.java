@@ -9,16 +9,22 @@ import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
-@Mod(RandomEvents.MOD_ID)
 public class RandomEvents {
 
     public static final String MOD_ID = "randomevents";
-    private static final String TIMER_KEY = "RandomEventsRemainingTicks";
+
+    private static final String TIMER_KEY =
+            "RandomEventsRemainingTicks";
+
     public static final int EVENT_INTERVAL = 1200;
+
     private static final int DIAGNOSTIC_LOG_INTERVAL = 200;
+
+    private static long serverTickCounter = 0;
 
     public RandomEvents() {
         NetworkHandler.register();
+
         System.out.println(
                 "[Random Events][DIAGNOSTIC] Mod constructor executed."
         );
@@ -39,6 +45,7 @@ public class RandomEvents {
             }
 
             var data = player.getPersistentData();
+
             boolean initialized = !data.contains(TIMER_KEY);
 
             if (initialized) {
@@ -65,19 +72,38 @@ public class RandomEvents {
         }
 
         @SubscribeEvent
-        public static void onPlayerTick(
-                TickEvent.PlayerTickEvent.Post event
+        public static void onServerTick(
+                TickEvent.ServerTickEvent.Post event
         ) {
-            if (!(event.player instanceof ServerPlayer player)) {
-                return;
+            serverTickCounter++;
+
+            if (serverTickCounter % DIAGNOSTIC_LOG_INTERVAL == 0) {
+                System.out.println(
+                        "[Random Events][DIAGNOSTIC] "
+                                + "Server tick working. tick="
+                                + serverTickCounter
+                );
             }
 
+            for (ServerPlayer player :
+                    event.getServer().getPlayerList().getPlayers()) {
+
+                processPlayerTimer(player);
+            }
+        }
+
+        private static void processPlayerTimer(
+                ServerPlayer player
+        ) {
             var data = player.getPersistentData();
 
             if (!data.contains(TIMER_KEY)) {
                 System.out.println(
-                        "[Random Events][DIAGNOSTIC] Timer key missing. Initializing."
+                        "[Random Events][DIAGNOSTIC] Timer missing for "
+                                + player.getGameProfile().getName()
+                                + ". Initializing."
                 );
+
                 data.putInt(TIMER_KEY, EVENT_INTERVAL);
             }
 
@@ -90,30 +116,39 @@ public class RandomEvents {
             if (remaining <= 0) {
                 System.out.println(
                         "[Random Events][DIAGNOSTIC] TIMER REACHED ZERO! "
-                                + "Calling startRandomEvents()."
+                                + "Player: "
+                                + player.getGameProfile().getName()
                 );
 
-                ActiveEventManager.startRandomEvents(player);
+                try {
+                    ActiveEventManager.startRandomEvents(player);
 
-                remaining = EVENT_INTERVAL;
+                    System.out.println(
+                            "[Random Events][DIAGNOSTIC] "
+                                    + "startRandomEvents() completed."
+                    );
 
-                System.out.println(
-                        "[Random Events][DIAGNOSTIC] Event selection returned. "
-                                + "Timer reset to " + EVENT_INTERVAL
-                );
+                } catch (Exception exception) {
+                    System.err.println(
+                            "[Random Events][ERROR] "
+                                    + "Failed to start random event!"
+                    );
+
+                    exception.printStackTrace();
+                } finally {
+                    remaining = EVENT_INTERVAL;
+
+                    System.out.println(
+                            "[Random Events][DIAGNOSTIC] "
+                                    + "Timer reset to "
+                                    + EVENT_INTERVAL
+                    );
+                }
             }
 
             data.putInt(TIMER_KEY, remaining);
 
-            if (player.tickCount % DIAGNOSTIC_LOG_INTERVAL == 0) {
-                System.out.println(
-                        "[Random Events][DIAGNOSTIC] Server tick working. "
-                                + "tickCount=" + player.tickCount
-                                + ", remainingTicks=" + remaining
-                );
-            }
-
-            if (player.tickCount % 20 == 0) {
+            if (serverTickCounter % 20 == 0) {
                 syncTimer(player);
             }
         }
@@ -122,8 +157,11 @@ public class RandomEvents {
         public static void onPlayerClone(
                 PlayerEvent.Clone event
         ) {
-            var oldData = event.getOriginal().getPersistentData();
-            var newData = event.getEntity().getPersistentData();
+            var oldData =
+                    event.getOriginal().getPersistentData();
+
+            var newData =
+                    event.getEntity().getPersistentData();
 
             if (oldData.contains(TIMER_KEY)) {
                 newData.putInt(

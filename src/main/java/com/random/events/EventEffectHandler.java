@@ -3,6 +3,7 @@ package com.random.events;
 
 import com.random.events.EventDefinition.EventType;
 
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -13,13 +14,14 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LightningBolt;
 import net.minecraft.world.entity.animal.Chicken;
 import net.minecraft.world.entity.animal.Wolf;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Spider;
-import net.minecraft.world.entity.monster.Warden;
 import net.minecraft.world.entity.monster.Zombie;
+import net.minecraft.world.entity.monster.warden.Warden;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.level.levelgen.Heightmap;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -33,11 +35,9 @@ public final class EventEffectHandler {
     private static final Random RANDOM = new Random();
 
     /*
-     * Временные существа, созданные модом.
-     *
-     * UUID игрока -> ID события -> UUID существ.
+     * Игрок -> ID события -> созданные существа.
      */
-    private static final Map<UUID, Map<String, List<UUID>>> TRACKED_ENTITIES =
+    private static final Map<UUID, Map<String, List<Entity>>> TRACKED_ENTITIES =
             new HashMap<>();
 
     private EventEffectHandler() {
@@ -111,7 +111,7 @@ public final class EventEffectHandler {
                 ));
 
                 player.addEffect(new MobEffectInstance(
-                        MobEffects.RESISTANCE,
+                        MobEffects.DAMAGE_RESISTANCE,
                         definition.durationTicks(),
                         0
                 ));
@@ -123,65 +123,30 @@ public final class EventEffectHandler {
                 ));
             }
 
-            case ZOMBIE_HORDE -> spawnZombieHorde(
-                    player,
-                    level,
-                    definition
-            );
+            case ZOMBIE_HORDE ->
+                    spawnZombieHorde(player, level, definition);
 
-            case SPIDER_HUNT -> spawnSpiderHunt(
-                    player,
-                    level,
-                    definition
-            );
+            case SPIDER_HUNT ->
+                    spawnSpiderHunt(player, level, definition);
 
-            case WRATH_OF_SKY -> summonLightning(
-                    player,
-                    level,
-                    definition
-            );
+            case WRATH_OF_SKY ->
+                    summonLightning(player, level, definition);
 
-            case CREEPER_AMBUSH -> spawnCreepers(
-                    player,
-                    level,
-                    definition
-            );
+            case CREEPER_AMBUSH ->
+                    spawnCreepers(player, level, definition);
 
-            case CHICKEN_RAIN -> spawnChickenRain(
-                    player,
-                    level,
-                    definition
-            );
+            case CHICKEN_RAIN ->
+                    spawnChickenRain(player, level, definition);
 
-            case WARDEN_HUNT -> spawnWarden(
-                    player,
-                    level,
-                    definition
-            );
+            case WARDEN_HUNT ->
+                    spawnWarden(player, level, definition);
 
-            case ZOMBIE_BOSS -> spawnZombieBoss(
-                    player,
-                    level,
-                    definition
-            );
+            case ZOMBIE_BOSS ->
+                    spawnZombieBoss(player, level, definition);
 
-            case HELPERS -> spawnHelpers(
-                    player,
-                    level
-            );
+            case HELPERS ->
+                    spawnHelpers(player, level);
 
-            /*
-             * Эти механики будут подключены
-             * отдельными обработчиками:
-             *
-             * SOLAR_BURST
-             * DENSE_FOG
-             * GIFT_OF_FATE
-             * EXPERIENCE_FEVER
-             * WATERDROP
-             * METEOR_SHOWER
-             * TRAPPED_CHEST
-             */
             case SOLAR_BURST,
                  DENSE_FOG,
                  GIFT_OF_FATE,
@@ -189,12 +154,13 @@ public final class EventEffectHandler {
                  WATERDROP,
                  METEOR_SHOWER,
                  TRAPPED_CHEST -> {
+                // Будут подключены отдельными обработчиками.
             }
         }
     }
 
     /**
-     * Вызывается при каждом тике активного события.
+     * Обрабатывает специальные эффекты во время события.
      */
     public static void tick(
             ServerPlayer player,
@@ -206,19 +172,20 @@ public final class EventEffectHandler {
             ServerLevel level = player.serverLevel();
 
             boolean daytime = level.isDay();
-
             boolean canSeeSky = level.canSeeSky(
                     player.blockPosition()
             );
 
             boolean raining = level.isRaining();
 
-            if (daytime && canSeeSky && !raining
+            if (daytime
+                    && canSeeSky
+                    && !raining
                     && player.isAlive()
                     && !player.isInWaterRainOrBubble()) {
 
                 if (player.tickCount % 20 == 0) {
-                    player.setSecondsOnFire(2);
+                    player.setRemainingFireTicks(40);
                 }
             }
         }
@@ -248,23 +215,19 @@ public final class EventEffectHandler {
 
         UUID playerId = player.getUUID();
 
-        Map<String, List<UUID>> playerEntities =
+        Map<String, List<Entity>> playerEntities =
                 TRACKED_ENTITIES.get(playerId);
 
         if (playerEntities == null) {
             return;
         }
 
-        List<UUID> entityIds =
+        List<Entity> entities =
                 playerEntities.remove(definition.id());
 
-        if (entityIds != null) {
-
-            for (UUID entityId : entityIds) {
-
-                Entity entity = player.server.getEntity(entityId);
-
-                if (entity != null && entity.isAlive()) {
+        if (entities != null) {
+            for (Entity entity : entities) {
+                if (entity.isAlive()) {
                     entity.discard();
                 }
             }
@@ -276,26 +239,22 @@ public final class EventEffectHandler {
     }
 
     /**
-     * Очищает временных существ игрока.
+     * Удаляет временных существ при выходе игрока.
      */
     public static void cleanupPlayer(ServerPlayer player) {
 
         UUID playerId = player.getUUID();
 
-        Map<String, List<UUID>> playerEntities =
+        Map<String, List<Entity>> playerEntities =
                 TRACKED_ENTITIES.remove(playerId);
 
         if (playerEntities == null) {
             return;
         }
 
-        for (List<UUID> entityIds : playerEntities.values()) {
-
-            for (UUID entityId : entityIds) {
-
-                Entity entity = player.server.getEntity(entityId);
-
-                if (entity != null && entity.isAlive()) {
+        for (List<Entity> entities : playerEntities.values()) {
+            for (Entity entity : entities) {
+                if (entity.isAlive()) {
                     entity.discard();
                 }
             }
@@ -319,9 +278,9 @@ public final class EventEffectHandler {
                 continue;
             }
 
-            spawnNearPlayer(player, zombie, level);
-
-            trackEntity(player, definition, zombie);
+            if (spawnNearPlayer(player, zombie, level)) {
+                trackEntity(player, definition, zombie);
+            }
         }
     }
 
@@ -344,14 +303,14 @@ public final class EventEffectHandler {
                 continue;
             }
 
-            spawnNearPlayer(player, spider, level);
-
-            trackEntity(player, definition, spider);
+            if (spawnNearPlayer(player, spider, level)) {
+                trackEntity(player, definition, spider);
+            }
         }
     }
 
     /**
-     * Криперская засада.
+     * Криперская засада: три крипера.
      */
     private static void spawnCreepers(
             ServerPlayer player,
@@ -367,9 +326,9 @@ public final class EventEffectHandler {
                 continue;
             }
 
-            spawnNearPlayer(player, creeper, level);
-
-            trackEntity(player, definition, creeper);
+            if (spawnNearPlayer(player, creeper, level)) {
+                trackEntity(player, definition, creeper);
+            }
         }
     }
 
@@ -425,7 +384,7 @@ public final class EventEffectHandler {
         double z = player.getZ() + RANDOM.nextInt(13) - 6;
 
         int y = level.getHeight(
-                net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
+                Heightmap.Types.MOTION_BLOCKING,
                 (int) x,
                 (int) z
         );
@@ -445,7 +404,7 @@ public final class EventEffectHandler {
     }
 
     /**
-     * Мифический Хранитель.
+     * Хранитель появляется рядом с игроком.
      */
     private static void spawnWarden(
             ServerPlayer player,
@@ -459,14 +418,13 @@ public final class EventEffectHandler {
             return;
         }
 
-        spawnNearPlayer(player, warden, level);
-
-        trackEntity(player, definition, warden);
+        if (spawnNearPlayer(player, warden, level)) {
+            trackEntity(player, definition, warden);
+        }
     }
 
     /**
-     * Зомби-босс с 100 единицами здоровья
-     * и полным алмазным комплектом.
+     * Зомби-босс: 100 HP и алмазная броня.
      */
     private static void spawnZombieBoss(
             ServerPlayer player,
@@ -481,9 +439,7 @@ public final class EventEffectHandler {
         }
 
         zombie.setCustomName(
-                net.minecraft.network.chat.Component.literal(
-                        "Зомби-босс"
-                )
+                Component.literal("Зомби-босс")
         );
 
         zombie.setCustomNameVisible(true);
@@ -520,14 +476,14 @@ public final class EventEffectHandler {
         zombie.setDropChance(EquipmentSlot.LEGS, 0.0F);
         zombie.setDropChance(EquipmentSlot.FEET, 0.0F);
 
-        spawnNearPlayer(player, zombie, level);
-
-        trackEntity(player, definition, zombie);
+        if (spawnNearPlayer(player, zombie, level)) {
+            trackEntity(player, definition, zombie);
+        }
     }
 
     /**
-     * Создаёт пять настоящих прирученных волков.
-     * Волки принадлежат игроку и остаются после события.
+     * Пять настоящих прирученных волков.
+     * Они остаются после завершения события.
      */
     private static void spawnHelpers(
             ServerPlayer player,
@@ -542,15 +498,15 @@ public final class EventEffectHandler {
                 continue;
             }
 
-            spawnNearPlayer(player, wolf, level);
+            if (!spawnNearPlayer(player, wolf, level)) {
+                continue;
+            }
 
             wolf.tame(player);
             wolf.setOrderedToSit(false);
 
             wolf.setCustomName(
-                    net.minecraft.network.chat.Component.literal(
-                            "Помощник"
-                    )
+                    Component.literal("Помощник")
             );
 
             wolf.setCustomNameVisible(true);
@@ -558,9 +514,9 @@ public final class EventEffectHandler {
     }
 
     /**
-     * Безопасное размещение существа около игрока.
+     * Размещение существа рядом с игроком.
      */
-    private static void spawnNearPlayer(
+    private static boolean spawnNearPlayer(
             ServerPlayer player,
             Entity entity,
             ServerLevel level
@@ -570,7 +526,7 @@ public final class EventEffectHandler {
         double z = player.getZ() + RANDOM.nextInt(11) - 5;
 
         int y = level.getHeight(
-                net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING,
+                Heightmap.Types.MOTION_BLOCKING,
                 (int) x,
                 (int) z
         );
@@ -583,11 +539,11 @@ public final class EventEffectHandler {
                 0.0F
         );
 
-        level.addFreshEntity(entity);
+        return level.addFreshEntity(entity);
     }
 
     /**
-     * Запоминает созданное модом существо.
+     * Сохраняет ссылку на созданное существо.
      */
     private static void trackEntity(
             ServerPlayer player,
@@ -604,6 +560,6 @@ public final class EventEffectHandler {
                         definition.id(),
                         id -> new ArrayList<>()
                 )
-                .add(entity.getUUID());
+                .add(entity);
     }
 }

@@ -1,4 +1,3 @@
-
 package com.random.events;
 
 import net.minecraft.core.BlockPos;
@@ -46,15 +45,6 @@ public final class NewEventHandler {
 
     private static final Map<UUID, Integer> EXPERIENCE_RAIN_TARGETS =
             new HashMap<>();
-
-    private static final Map<UUID, Integer> MERCHANT_TICKS =
-            new HashMap<>();
-
-    private static final Map<UUID, Boolean> MERCHANT_WARNING_SENT =
-            new HashMap<>();
-
-    private static final int MERCHANT_DURATION = 5 * 60 * 20;
-    private static final int MERCHANT_WARNING_TIME = 60 * 20;
 
     private static final int EXPERIENCE_RAIN_DURATION = 15 * 20;
     private static final int EXPERIENCE_RAIN_MIN_ORBS = 20;
@@ -115,9 +105,6 @@ public final class NewEventHandler {
             case IRON_DEFENDER ->
                     protectPlayer(player, definition);
 
-            case MYSTERIOUS_MERCHANT ->
-                    tickMerchant(player);
-
             case EXPERIENCE_RAIN ->
                     tickExperienceRain(player);
 
@@ -176,11 +163,8 @@ public final class NewEventHandler {
             }
 
             case MYSTERIOUS_MERCHANT -> {
-                MERCHANT_TICKS.remove(playerId);
-                MERCHANT_WARNING_SENT.remove(playerId);
-
-                // Торговца не удаляем:
-                // его собственный таймер завершит его жизнь.
+                // Торговца не удаляем.
+                // Его собственный таймер завершит его жизнь.
                 forgetTrackedEntities(
                         playerId,
                         definition.id()
@@ -227,9 +211,6 @@ public final class NewEventHandler {
         EXPERIENCE_RAIN_TICKS.remove(playerId);
         EXPERIENCE_ORBS_SPAWNED.remove(playerId);
         EXPERIENCE_RAIN_TARGETS.remove(playerId);
-
-        MERCHANT_TICKS.remove(playerId);
-        MERCHANT_WARNING_SENT.remove(playerId);
 
         /*
          * Благословение хранится в PersistentData игрока.
@@ -538,8 +519,8 @@ public final class NewEventHandler {
             return;
         }
 
-        // Независимый таймер на 5 минут.
-        TimedTraderHandler.setLifetime(trader);
+        // Таймер на пять минут и UUID инициатора события.
+        TimedTraderHandler.setLifetime(trader, player);
 
         addMerchantTrade(
                 trader,
@@ -573,16 +554,6 @@ public final class NewEventHandler {
 
         track(player, definition, trader);
 
-        MERCHANT_TICKS.put(
-                player.getUUID(),
-                MERCHANT_DURATION
-        );
-
-        MERCHANT_WARNING_SENT.put(
-                player.getUUID(),
-                false
-        );
-
         player.sendSystemMessage(
                 Component.literal(
                         "§6[Random Events] §eЗагадочный торговец появился рядом!"
@@ -613,36 +584,6 @@ public final class NewEventHandler {
         );
 
         trader.getOffers().add(offer);
-    }
-
-    private static void tickMerchant(ServerPlayer player) {
-        UUID playerId = player.getUUID();
-
-        Integer remaining = MERCHANT_TICKS.get(playerId);
-
-        if (remaining == null) {
-            return;
-        }
-
-        remaining--;
-
-        MERCHANT_TICKS.put(playerId, remaining);
-
-        if (remaining <= MERCHANT_WARNING_TIME
-                && !MERCHANT_WARNING_SENT.getOrDefault(
-                        playerId,
-                        false
-                )) {
-
-            MERCHANT_WARNING_SENT.put(playerId, true);
-
-            player.sendSystemMessage(
-                    Component.literal(
-                            "§6[Random Events] §eОсталась 1 минута! "
-                                    + "Успей совершить покупки!"
-                    )
-            );
-        }
     }
 
     // =====================================================
@@ -732,8 +673,7 @@ public final class NewEventHandler {
                     level.getMaxBuildHeight() - 2
             );
 
-            // Обычная малая сфера даёт 1 XP.
-            // Здесь каждая сфера даёт 2 XP.
+            // Каждая сфера даёт 2 XP.
             ExperienceOrb orb = new ExperienceOrb(
                     level,
                     x,
@@ -1016,4 +956,4 @@ public final class NewEventHandler {
 
         return false;
     }
-}
+            }

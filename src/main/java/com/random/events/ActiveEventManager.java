@@ -4,6 +4,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.server.level.ServerPlayer;
+
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -42,7 +43,10 @@ public final class ActiveEventManager {
         UUID playerId = player.getUUID();
         String lastEvent = LAST_EVENT.get(playerId);
 
-        EventDefinition first = selectWeighted(allEvents, lastEvent);
+        EventDefinition first = selectWeighted(
+                allEvents,
+                lastEvent
+        );
 
         if (first == null) {
             return;
@@ -55,7 +59,7 @@ public final class ActiveEventManager {
         if (first.canCombine()
                 && RANDOM.nextDouble() < COMBINATION_CHANCE) {
 
-            String excluded = LAST_EVENT.get(playerId);
+            String excluded = first.id();
 
             List<EventDefinition> compatible = new ArrayList<>();
 
@@ -66,7 +70,10 @@ public final class ActiveEventManager {
                 }
             }
 
-            EventDefinition second = selectWeighted(compatible, excluded);
+            EventDefinition second = selectWeighted(
+                    compatible,
+                    excluded
+            );
 
             if (second != null && startEvent(player, second)) {
                 LAST_EVENT.put(playerId, second.id());
@@ -78,8 +85,9 @@ public final class ActiveEventManager {
             ServerPlayer player,
             String eventId
     ) {
-        EventDefinition definition =
-                EventRegistry.getById(eventId).orElse(null);
+        EventDefinition definition = EventRegistry
+                .getById(eventId)
+                .orElse(null);
 
         if (definition == null) {
             player.sendSystemMessage(
@@ -130,10 +138,15 @@ public final class ActiveEventManager {
             ));
 
             sendStartMessage(player, definition);
+
             return true;
 
         } catch (RuntimeException exception) {
-            EventEffectHandler.end(player, definition);
+            try {
+                EventEffectHandler.end(player, definition);
+            } catch (RuntimeException cleanupException) {
+                cleanupException.printStackTrace();
+            }
 
             System.err.println(
                     "[Random Events] Не удалось запустить событие: "
@@ -176,15 +189,29 @@ public final class ActiveEventManager {
                         active.definition
                 );
 
-                active.remainingTicks--;
+                boolean finished;
 
-                if (active.remainingTicks <= 0) {
+                if (active.definition.hasTimeLimit()) {
+                    active.remainingTicks--;
+
+                    finished = active.remainingTicks <= 0;
+                } else {
+                    finished = NewEventHandler.isFinished(
+                            player,
+                            active.definition
+                    );
+                }
+
+                if (finished) {
                     EventEffectHandler.end(
                             player,
                             active.definition
                     );
 
-                    sendEndMessage(player, active.definition);
+                    sendEndMessage(
+                            player,
+                            active.definition
+                    );
 
                     iterator.remove();
                 }
@@ -197,16 +224,20 @@ public final class ActiveEventManager {
 
                 exception.printStackTrace();
 
-                EventEffectHandler.end(
-                        player,
-                        active.definition
-                );
+                try {
+                    EventEffectHandler.end(
+                            player,
+                            active.definition
+                    );
+                } catch (RuntimeException cleanupException) {
+                    cleanupException.printStackTrace();
+                }
 
                 iterator.remove();
 
                 player.sendSystemMessage(
                         Component.literal(
-                                "§c[Random Events] Событие было остановлено из-за ошибки."
+                                "§c[Random Events] Событие остановлено из-за ошибки."
                         )
                 );
             }
@@ -233,7 +264,10 @@ public final class ActiveEventManager {
                         active.definition
                 );
 
-                sendEndMessage(player, active.definition);
+                sendEndMessage(
+                        player,
+                        active.definition
+                );
 
             } catch (RuntimeException exception) {
                 System.err.println(
@@ -246,8 +280,12 @@ public final class ActiveEventManager {
         }
     }
 
-    public static List<EventDefinition> getActiveEvents(ServerPlayer player) {
-        List<ActiveEvent> events = ACTIVE_EVENTS.get(player.getUUID());
+    public static List<EventDefinition> getActiveEvents(
+            ServerPlayer player
+    ) {
+        List<ActiveEvent> events = ACTIVE_EVENTS.get(
+                player.getUUID()
+        );
 
         if (events == null) {
             return List.of();
@@ -266,7 +304,9 @@ public final class ActiveEventManager {
             ServerPlayer player,
             String eventId
     ) {
-        List<ActiveEvent> events = ACTIVE_EVENTS.get(player.getUUID());
+        List<ActiveEvent> events = ACTIVE_EVENTS.get(
+                player.getUUID()
+        );
 
         if (events == null) {
             return 0;
@@ -411,4 +451,4 @@ public final class ActiveEventManager {
             LAST_EVENT.remove(player.getUUID());
         }
     }
-        }
+}

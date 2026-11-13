@@ -1,7 +1,9 @@
+
 package com.random.events.client;
 
 import com.random.events.RandomEvents;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.FogRenderer;
 
 import net.minecraftforge.api.distmarker.Dist;
@@ -28,6 +30,22 @@ public final class DenseFogClientHandler {
         active = false;
     }
 
+    /**
+     * Пользовательский туман не применяется,
+     * пока открыто игровое меню.
+     *
+     * Это предотвращает конфликты отрисовки
+     * при отображении интерфейса поверх мира.
+     */
+    private static boolean shouldRenderCustomFog() {
+        Minecraft minecraft = Minecraft.getInstance();
+
+        return active
+                && minecraft.level != null
+                && minecraft.player != null
+                && minecraft.screen == null;
+    }
+
     @Mod.EventBusSubscriber(
             modid = RandomEvents.MOD_ID,
             value = Dist.CLIENT,
@@ -39,7 +57,7 @@ public final class DenseFogClientHandler {
         public static void onRenderFog(
                 ViewportEvent.RenderFog event
         ) {
-            if (!active) {
+            if (!shouldRenderCustomFog()) {
                 return;
             }
 
@@ -56,7 +74,7 @@ public final class DenseFogClientHandler {
         public static void onComputeFogColor(
                 ViewportEvent.ComputeFogColor event
         ) {
-            if (!active) {
+            if (!shouldRenderCustomFog()) {
                 return;
             }
 

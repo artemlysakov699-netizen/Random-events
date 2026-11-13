@@ -1,5 +1,6 @@
 
 {
+  "parent": "minecraft:block/block",
   "textures": {
     "particle": "randomevents:item/event_remote",
     "tablet": "randomevents:item/event_remote"
@@ -10,28 +11,27 @@
       "to": [14, 16, 10],
       "faces": {
         "north": {
-          "uv": [8, 4, 56, 60],
-          "texture": "#tablet",
-          "cullface": "north"
+          "uv": [0, 0, 16, 16],
+          "texture": "#tablet"
         },
         "south": {
-          "uv": [8, 4, 56, 60],
+          "uv": [0, 0, 16, 16],
           "texture": "#tablet"
         },
         "east": {
-          "uv": [56, 4, 60, 60],
+          "uv": [0, 0, 4, 16],
           "texture": "#tablet"
         },
         "west": {
-          "uv": [4, 4, 8, 60],
+          "uv": [0, 0, 4, 16],
           "texture": "#tablet"
         },
         "up": {
-          "uv": [8, 0, 56, 4],
+          "uv": [0, 0, 16, 4],
           "texture": "#tablet"
         },
         "down": {
-          "uv": [8, 60, 56, 64],
+          "uv": [0, 0, 16, 4],
           "texture": "#tablet"
         }
       }

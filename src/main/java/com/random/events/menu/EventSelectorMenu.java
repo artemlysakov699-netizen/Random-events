@@ -1,3 +1,4 @@
+
 package com.random.events.menu;
 
 import com.random.events.ActiveEventManager;
@@ -164,4 +165,4 @@ public class EventSelectorMenu extends AbstractContainerMenu {
     public boolean stillValid(Player player) {
         return true;
     }
-    }
+}

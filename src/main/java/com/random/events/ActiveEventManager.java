@@ -57,10 +57,16 @@ public final class ActiveEventManager {
             return;
         }
 
-        if (startEvent(player, first)) {
-            LAST_EVENT.put(playerId, first.id());
+        boolean firstStarted = startEvent(player, first);
+
+        if (!firstStarted) {
+            return;
         }
 
+        LAST_EVENT.put(playerId, first.id());
+
+        // Второе событие возможно только после успешного
+        // запуска первого события.
         if (first.canCombine()
                 && RANDOM.nextDouble() < COMBINATION_CHANCE) {
 
@@ -106,17 +112,48 @@ public final class ActiveEventManager {
             return false;
         }
 
-        boolean started = startEvent(player, definition);
-
-        if (!started) {
+        if (isEventActive(player, eventId)) {
             player.sendSystemMessage(
                     Component.literal(
                             "§e[Random Events] Это событие уже активно."
                     )
             );
+
+            return false;
+        }
+
+        boolean started = startEvent(player, definition);
+
+        if (started) {
+            LAST_EVENT.put(player.getUUID(), definition.id());
         }
 
         return started;
+    }
+
+    // =====================================================
+    // ПРОВЕРКА АКТИВНОСТИ СОБЫТИЯ
+    // =====================================================
+
+    private static boolean isEventActive(
+            ServerPlayer player,
+            String eventId
+    ) {
+        List<ActiveEvent> events = ACTIVE_EVENTS.get(
+                player.getUUID()
+        );
+
+        if (events == null) {
+            return false;
+        }
+
+        for (ActiveEvent active : events) {
+            if (active.definition.id().equals(eventId)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // =====================================================
@@ -134,10 +171,8 @@ public final class ActiveEventManager {
                 ignored -> new ArrayList<>()
         );
 
-        for (ActiveEvent active : events) {
-            if (active.definition.id().equals(definition.id())) {
-                return false;
-            }
+        if (isEventActive(player, definition.id())) {
+            return false;
         }
 
         try {

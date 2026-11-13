@@ -1,3 +1,4 @@
+
 package com.random.events;
 
 import com.random.events.EventDefinition.EventType;
@@ -14,7 +15,6 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LightningBolt;
-import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.animal.Chicken;
 import net.minecraft.world.entity.animal.Wolf;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -24,6 +24,7 @@ import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.entity.monster.warden.Warden;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
 
@@ -153,6 +154,10 @@ public final class EventEffectHandler {
                  METEOR_SHOWER,
                  TRAPPED_CHEST -> {
                 // Эти механики запускаются отдельным обработчиком.
+            }
+
+            default -> {
+                // Остальные события обрабатываются NewEventHandler.
             }
         }
 
@@ -406,17 +411,30 @@ public final class EventEffectHandler {
             ServerLevel level,
             EventDefinition definition
     ) {
+        if (level.getDifficulty() == Difficulty.PEACEFUL) {
+            player.sendSystemMessage(
+                    Component.literal(
+                            "§c[Random Events] Страж не может появиться на мирной сложности."
+                    )
+            );
+
+            return;
+        }
+
         Warden warden = EntityType.WARDEN.create(level);
 
-        if (warden != null
-                && spawnNearPlayer(player, warden, level, 64)) {
-
-            trackEntity(player, definition, warden);
-
-            System.out.println(
-                    "[Random Events] Warden Hunt: Warden spawned."
+        if (warden == null) {
+            System.err.println(
+                    "[Random Events] Warden Hunt: entity creation failed."
             );
-        } else {
+
+            return;
+        }
+
+        // Не даём Стражу сразу начать исчезать из-за отсутствия цели.
+        warden.setPersistenceRequired();
+
+        if (!spawnNearPlayer(player, warden, level, 64)) {
             System.err.println(
                     "[Random Events] Warden Hunt: failed to spawn Warden."
             );
@@ -426,7 +444,19 @@ public final class EventEffectHandler {
                             "§c[Random Events] Не удалось найти место для появления Стража."
                     )
             );
+
+            return;
         }
+
+        // После успешного появления назначаем игрока целью.
+        warden.setTarget(player);
+
+        trackEntity(player, definition, warden);
+
+        System.out.println(
+                "[Random Events] Warden Hunt: Warden spawned at "
+                        + warden.blockPosition()
+        );
     }
 
     private static void spawnZombieBoss(
@@ -653,13 +683,17 @@ public final class EventEffectHandler {
                     0.0F
             );
 
-            // Проверяет полную область существа,
+            // Проверяем полную область существа,
             // включая больших мобов вроде Стража.
             if (!level.noCollision(entity)) {
                 continue;
             }
 
-            return level.addFreshEntity(entity);
+            // Если добавление не удалось, продолжаем поиск,
+            // а не прекращаем все попытки.
+            if (level.addFreshEntity(entity)) {
+                return true;
+            }
         }
 
         return false;
@@ -709,4 +743,4 @@ public final class EventEffectHandler {
             }
         }
     }
-                }
+}

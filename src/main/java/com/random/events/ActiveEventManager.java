@@ -397,32 +397,37 @@ public final class ActiveEventManager {
 
             for (ActiveEvent active : events) {
 
-                EventDefinition definition = active.definition;
+                try {
+                    /*
+                     * Каждый обработчик сам определяет,
+                     * что нужно очистить при выходе игрока.
+                     *
+                     * Засада разбойников и железный защитник
+                     * удаляют временных существ.
+                     *
+                     * Торговец сохраняет собственный таймер.
+                     *
+                     * Золотое благословение сохраняет
+                     * оставшееся время в PersistentData.
+                     *
+                     * Разоритель и слизни не удаляются:
+                     * их обработчик только прекращает отслеживание.
+                     */
+                    endEvent(player, active.definition);
 
-                /*
-                 * Старые события корректно завершаются.
-                 */
-                if (!isNewEvent(definition)) {
-                    try {
-                        EventEffectHandler.end(
-                                player,
-                                definition
-                        );
+                } catch (RuntimeException exception) {
 
-                    } catch (RuntimeException exception) {
-                        exception.printStackTrace();
-                    }
+                    System.err.println(
+                            "[Random Events] Ошибка очистки события при выходе: "
+                                    + active.definition.id()
+                    );
+
+                    exception.printStackTrace();
                 }
             }
         }
 
-        /*
-         * Новые события не завершаем принудительно.
-         *
-         * Это позволяет оставить их существ в мире.
-         * Специальные временные объекты, например проклятый
-         * сундук, удаляются в cleanupPlayer().
-         */
+        // Очищаем оставшиеся временные данные обработчиков.
         EventEffectHandler.cleanupPlayer(player);
         NewEventHandler.cleanupPlayer(player);
 

@@ -1,3 +1,4 @@
+
 package com.random.events;
 
 import com.random.events.EventDefinition.EventType;
@@ -8,6 +9,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -21,11 +23,11 @@ import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraftforge.event.entity.living.LivingExperienceDropEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.eventbus.api.Event;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.fml.common.Mod;
 
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
@@ -225,7 +227,7 @@ public final class EventMechanicsHandler {
         WATERDROPS.put(id, data);
 
         player.setItemSlot(
-                net.minecraft.world.entity.EquipmentSlot.OFFHAND,
+                EquipmentSlot.OFFHAND,
                 new ItemStack(Items.WATER_BUCKET)
         );
 
@@ -258,7 +260,7 @@ public final class EventMechanicsHandler {
         }
 
         player.setItemSlot(
-                net.minecraft.world.entity.EquipmentSlot.OFFHAND,
+                EquipmentSlot.OFFHAND,
                 data.originalOffhand.copy()
         );
 
@@ -389,9 +391,9 @@ public final class EventMechanicsHandler {
             return;
         }
 
-        if (!data.level.hasChunkAt(data.chestPos)) {
-            return;
-        }
+        // Загружаем чанк, чтобы гарантированно очистить
+        // временные блоки при завершении события.
+        data.level.getChunkAt(data.chestPos);
 
         if (data.level.getBlockState(data.chestPos)
                 .is(Blocks.CHEST)) {
@@ -574,48 +576,57 @@ public final class EventMechanicsHandler {
                 return;
             }
 
-            TrapData data = TRAPS.get(player.getUUID());
+            BlockPos clickedPos = event.getPos();
 
-            if (data == null) {
+            Iterator<Map.Entry<UUID, TrapData>> iterator =
+                    TRAPS.entrySet().iterator();
+
+            while (iterator.hasNext()) {
+                Map.Entry<UUID, TrapData> entry = iterator.next();
+
+                TrapData data = entry.getValue();
+
+                if (!data.level.dimension().equals(
+                        player.serverLevel().dimension()
+                )) {
+                    continue;
+                }
+
+                if (!clickedPos.equals(data.chestPos)) {
+                    continue;
+                }
+
+                // Ловушка найдена. Удаляем её запись до взрыва,
+                // чтобы исключить повторное срабатывание.
+                iterator.remove();
+
+                event.setCanceled(true);
+
+                data.level.removeBlock(data.chestPos, false);
+                data.level.removeBlock(data.tntPos, false);
+
+                player.sendSystemMessage(
+                        Component.literal(
+                                "§c[Random Events] ЛОВУШКА!"
+                        )
+                );
+
+                data.level.explode(
+                        player,
+                        data.tntPos.getX() + 0.5,
+                        data.tntPos.getY() + 0.5,
+                        data.tntPos.getZ() + 0.5,
+                        4.0F,
+                        Level.ExplosionInteraction.TNT
+                );
+
+                System.out.println(
+                        "[Random Events] Trapped Chest triggered by "
+                                + player.getGameProfile().getName()
+                );
+
                 return;
             }
-
-            if (!data.level.dimension().equals(
-                    player.serverLevel().dimension()
-            )) {
-                return;
-            }
-
-            if (!event.getPos().equals(data.chestPos)) {
-                return;
-            }
-
-            // Удаляем запись до взрыва, чтобы исключить
-            // повторное срабатывание на тот же сундук.
-            TRAPS.remove(player.getUUID());
-
-            data.level.removeBlock(data.chestPos, false);
-            data.level.removeBlock(data.tntPos, false);
-
-            player.sendSystemMessage(
-                    Component.literal(
-                            "§c[Random Events] ЛОВУШКА!"
-                    )
-            );
-
-            data.level.explode(
-                    player,
-                    data.tntPos.getX() + 0.5,
-                    data.tntPos.getY() + 0.5,
-                    data.tntPos.getZ() + 0.5,
-                    4.0F,
-                    Level.ExplosionInteraction.TNT
-            );
-
-            System.out.println(
-                    "[Random Events] Trapped Chest triggered by "
-                            + player.getGameProfile().getName()
-            );
         }
     }
 
@@ -658,4 +669,4 @@ public final class EventMechanicsHandler {
             this.originalSupportState = originalSupportState;
         }
     }
-                                            }
+}

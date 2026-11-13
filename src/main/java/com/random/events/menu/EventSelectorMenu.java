@@ -32,6 +32,8 @@ public class EventSelectorMenu extends AbstractContainerMenu {
     private static final int EVENT_START_SLOT = 18;
     private static final int EVENT_SLOTS = SLOT_COUNT - EVENT_START_SLOT;
 
+    private static final int DESCRIPTION_LINE_LENGTH = 42;
+
     private final SimpleContainer menuContainer;
 
     private EventRarity rarityFilter = null;
@@ -151,6 +153,38 @@ public class EventSelectorMenu extends AbstractContainerMenu {
                 "Фильтры воздействия",
                 "Кнопки 8–11: помощь, вред или нейтральные события."
         );
+
+        setInfoButton(
+                13,
+                Items.KNOWLEDGE_BOOK,
+                "Как пользоваться",
+                "Наведись на событие, чтобы прочитать его описание. "
+                        + "Нажми левой кнопкой мыши, чтобы активировать его."
+        );
+
+        setInfoButton(
+                14,
+                Items.CLOCK,
+                "Длительность",
+                "В подсказке события указано время его действия "
+                        + "или условие завершения."
+        );
+
+        setInfoButton(
+                15,
+                Items.BOOK,
+                "Всего событий",
+                "В Random Events зарегистрировано "
+                        + EventRegistry.getAll().size() + " событий."
+        );
+
+        setInfoButton(
+                16,
+                Items.BARRIER,
+                "Сброс фильтров",
+                "Нажми кнопку «Все редкости» и «Все типы», "
+                        + "чтобы снова увидеть полный список."
+        );
     }
 
     private void setFilterButton(
@@ -163,15 +197,20 @@ public class EventSelectorMenu extends AbstractContainerMenu {
         ItemStack stack = new ItemStack(item);
 
         Component displayName = Component.literal(
-                (selected ? "§a✔ " : "§f") + name
+                (selected ? "✔ " : "") + name
+        ).withStyle(
+                selected ? ChatFormatting.GREEN : ChatFormatting.WHITE
         );
 
         stack.set(DataComponents.CUSTOM_NAME, displayName);
 
         List<Component> lore = new ArrayList<>();
 
-        lore.add(Component.literal(description)
-                .withStyle(ChatFormatting.GRAY));
+        addWrappedLore(
+                lore,
+                description,
+                ChatFormatting.GRAY
+        );
 
         lore.add(Component.literal(
                 selected ? "Выбран этот фильтр" : "Нажми, чтобы выбрать"
@@ -201,12 +240,17 @@ public class EventSelectorMenu extends AbstractContainerMenu {
                         .withStyle(ChatFormatting.AQUA)
         );
 
+        List<Component> lore = new ArrayList<>();
+
+        addWrappedLore(
+                lore,
+                description,
+                ChatFormatting.GRAY
+        );
+
         stack.set(
                 DataComponents.LORE,
-                new ItemLore(List.of(
-                        Component.literal(description)
-                                .withStyle(ChatFormatting.GRAY)
-                ))
+                new ItemLore(lore)
         );
 
         menuContainer.setItem(slot, stack);
@@ -244,9 +288,14 @@ public class EventSelectorMenu extends AbstractContainerMenu {
 
         lore.add(Component.empty());
 
-        lore.add(Component.literal(
-                definition.getDescription()
-        ).withStyle(ChatFormatting.GRAY));
+        lore.add(Component.literal("Описание события:")
+                .withStyle(ChatFormatting.GOLD));
+
+        addWrappedLore(
+                lore,
+                definition.getDescription(),
+                ChatFormatting.GRAY
+        );
 
         lore.add(Component.empty());
 
@@ -262,6 +311,8 @@ public class EventSelectorMenu extends AbstractContainerMenu {
             ).withStyle(ChatFormatting.YELLOW));
         }
 
+        lore.add(Component.empty());
+
         lore.add(Component.literal(
                 "Нажми, чтобы активировать"
         ).withStyle(ChatFormatting.GREEN));
@@ -272,6 +323,53 @@ public class EventSelectorMenu extends AbstractContainerMenu {
         );
 
         return icon;
+    }
+
+    /**
+     * Разбивает длинный текст на отдельные строки подсказки.
+     */
+    private static void addWrappedLore(
+            List<Component> lore,
+            String text,
+            ChatFormatting formatting
+    ) {
+        if (text == null || text.isBlank()) {
+            return;
+        }
+
+        String[] words = text.trim().split("\\s+");
+
+        StringBuilder line = new StringBuilder();
+
+        for (String word : words) {
+
+            if (line.length() == 0) {
+                line.append(word);
+                continue;
+            }
+
+            if (line.length() + 1 + word.length()
+                    > DESCRIPTION_LINE_LENGTH) {
+
+                lore.add(
+                        Component.literal(line.toString())
+                                .withStyle(formatting)
+                );
+
+                line.setLength(0);
+                line.append(word);
+
+            } else {
+                line.append(' ').append(word);
+            }
+        }
+
+        if (line.length() > 0) {
+            lore.add(
+                    Component.literal(line.toString())
+                            .withStyle(formatting)
+            );
+        }
     }
 
     private List<EventDefinition> getFilteredEvents() {

@@ -108,8 +108,9 @@ public final class CursedChestHandler {
             return false;
         }
 
+        // Выгруженный чанк не означает, что сундук исчез.
         if (!data.level.hasChunkAt(data.pos)) {
-            return false;
+            return true;
         }
 
         boolean exists = data.level
@@ -134,8 +135,10 @@ public final class CursedChestHandler {
             return;
         }
 
-        if (data.level.hasChunkAt(data.pos)
-                && data.level.getBlockState(data.pos).is(Blocks.CHEST)) {
+        // Загружаем чанк, чтобы гарантированно удалить сундук.
+        data.level.getChunkAt(data.pos);
+
+        if (data.level.getBlockState(data.pos).is(Blocks.CHEST)) {
             data.level.removeBlock(data.pos, false);
         }
     }
@@ -183,7 +186,7 @@ public final class CursedChestHandler {
             // Запрещаем открытие обычного интерфейса сундука.
             event.setCanceled(true);
 
-            // Сразу удаляем регистрацию, исключая повторное срабатывание.
+            // Удаляем регистрацию, исключая повторное срабатывание.
             CHESTS.remove(ownerId);
 
             ServerLevel level = matched.level;
@@ -203,7 +206,6 @@ public final class CursedChestHandler {
 
         /**
          * Удаляет регистрацию, если игрок сломал сундук.
-         * Сам блок удаляется обычным игровым действием.
          */
         @SubscribeEvent
         public static void onBlockBreak(BlockEvent.BreakEvent event) {

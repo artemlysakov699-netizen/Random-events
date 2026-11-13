@@ -46,10 +46,13 @@ public final class EventMechanicsHandler {
             new HashMap<>();
 
     private static final int METEOR_INTERVAL_TICKS = 80;
-    private static final int MAX_METEORS = 30;
 
     private EventMechanicsHandler() {
     }
+
+    // =====================================================
+    // ЗАПУСК МЕХАНИК СОБЫТИЙ
+    // =====================================================
 
     public static void start(
             ServerPlayer player,
@@ -81,6 +84,10 @@ public final class EventMechanicsHandler {
         }
     }
 
+    // =====================================================
+    // ОБНОВЛЕНИЕ МЕХАНИК СОБЫТИЙ
+    // =====================================================
+
     public static void tick(
             ServerPlayer player,
             EventDefinition definition
@@ -98,6 +105,10 @@ public final class EventMechanicsHandler {
             }
         }
     }
+
+    // =====================================================
+    // ЗАВЕРШЕНИЕ СОБЫТИЙ
+    // =====================================================
 
     public static void end(
             ServerPlayer player,
@@ -122,6 +133,10 @@ public final class EventMechanicsHandler {
         }
     }
 
+    // =====================================================
+    // ОЧИСТКА ПРИ ВЫХОДЕ ИГРОКА
+    // =====================================================
+
     public static void cleanupPlayer(ServerPlayer player) {
         endWaterdrop(player);
         removeTrap(player);
@@ -131,6 +146,10 @@ public final class EventMechanicsHandler {
         // Не оставляем включённый эффект на клиенте.
         NetworkHandler.sendDenseFog(player, false);
     }
+
+    // =====================================================
+    // ПОДАРОК СУДЬБЫ
+    // =====================================================
 
     private static void createGiftChest(ServerPlayer player) {
         ServerLevel level = player.serverLevel();
@@ -207,6 +226,10 @@ public final class EventMechanicsHandler {
         );
     }
 
+    // =====================================================
+    // ВАТЕРДРОП
+    // =====================================================
+
     private static void startWaterdrop(ServerPlayer player) {
         UUID id = player.getUUID();
 
@@ -274,6 +297,10 @@ public final class EventMechanicsHandler {
             );
         }
     }
+
+    // =====================================================
+    // СУНДУК-ОБМАНКА
+    // =====================================================
 
     private static void createTrap(ServerPlayer player) {
         ServerLevel level = player.serverLevel();
@@ -384,6 +411,10 @@ public final class EventMechanicsHandler {
         );
     }
 
+    // =====================================================
+    // УДАЛЕНИЕ СУНДУКА-ОБМАНКИ
+    // =====================================================
+
     private static void removeTrap(ServerPlayer player) {
         TrapData data = TRAPS.remove(player.getUUID());
 
@@ -414,6 +445,10 @@ public final class EventMechanicsHandler {
         }
     }
 
+    // =====================================================
+    // МЕТЕОРИТНЫЙ ДОЖДЬ
+    // =====================================================
+
     private static void tickMeteorShower(ServerPlayer player) {
         if (!player.isAlive()
                 || player.tickCount % METEOR_INTERVAL_TICKS != 0) {
@@ -423,10 +458,6 @@ public final class EventMechanicsHandler {
         UUID id = player.getUUID();
 
         int count = METEOR_COUNTS.getOrDefault(id, 0);
-
-        if (count >= MAX_METEORS) {
-            return;
-        }
 
         ServerLevel level = player.serverLevel();
 
@@ -454,6 +485,7 @@ public final class EventMechanicsHandler {
         }
 
         // Взрыв умеренной силы.
+        // Количество метеоритов не ограничено.
         level.explode(
                 null,
                 x + 0.5,
@@ -467,11 +499,15 @@ public final class EventMechanicsHandler {
 
         if ((count + 1) % 5 == 0) {
             System.out.println(
-                    "[Random Events] Meteor Shower: "
-                            + (count + 1) + "/" + MAX_METEORS
+                    "[Random Events] Meteor Shower: spawned "
+                            + (count + 1) + " meteors."
             );
         }
     }
+
+    // =====================================================
+    // ПОИСК БЕЗОПАСНОГО МЕСТА
+    // =====================================================
 
     private static BlockPos findSafePosition(
             ServerPlayer player,
@@ -531,6 +567,10 @@ public final class EventMechanicsHandler {
 
         return null;
     }
+
+    // =====================================================
+    // ОБРАБОТЧИКИ СОБЫТИЙ FORGE
+    // =====================================================
 
     @Mod.EventBusSubscriber(
             modid = RandomEvents.MOD_ID,
@@ -630,6 +670,10 @@ public final class EventMechanicsHandler {
         }
     }
 
+    // =====================================================
+    // ДАННЫЕ ВАТЕРДРОПА
+    // =====================================================
+
     private static final class WaterdropData {
 
         private final double x;
@@ -649,6 +693,10 @@ public final class EventMechanicsHandler {
             this.originalOffhand = originalOffhand;
         }
     }
+
+    // =====================================================
+    // ДАННЫЕ СУНДУКА-ОБМАНКИ
+    // =====================================================
 
     private static final class TrapData {
 

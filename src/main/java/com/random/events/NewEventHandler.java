@@ -131,7 +131,7 @@ public final class NewEventHandler {
         return switch (definition.type()) {
 
             case RAVAGER_WRATH ->
-                    !player.isAlive();
+                    !hasLivingEntities(playerId, definition.id());
 
             case SLIME_EPIDEMIC ->
                     !hasLivingEntities(playerId, definition.id());
@@ -868,7 +868,10 @@ public final class NewEventHandler {
                 continue;
             }
 
-            return level.addFreshEntity(entity);
+            // Если добавление не удалось, пробуем следующую точку.
+            if (level.addFreshEntity(entity)) {
+                return true;
+            }
         }
 
         return false;
@@ -953,7 +956,10 @@ public final class NewEventHandler {
                 continue;
             }
 
-            return level.addFreshEntity(entity);
+            // Если добавление не удалось, пробуем следующую точку.
+            if (level.addFreshEntity(entity)) {
+                return true;
+            }
         }
 
         return false;

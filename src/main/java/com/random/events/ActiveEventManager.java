@@ -29,13 +29,11 @@ public final class ActiveEventManager {
 
     private static final Random RANDOM = new Random();
 
-    private static final double COMBINATION_CHANCE = 0.20;
-
     private ActiveEventManager() {
     }
 
     // =====================================================
-    // СЛУЧАЙНЫЙ ВЫБОР СОБЫТИЙ
+    // ЗАПУСК ОДНОГО СЛУЧАЙНОГО СОБЫТИЯ
     // =====================================================
 
     public static void startRandomEvents(ServerPlayer player) {
@@ -48,45 +46,19 @@ public final class ActiveEventManager {
         UUID playerId = player.getUUID();
         String lastEvent = LAST_EVENT.get(playerId);
 
-        EventDefinition first = selectWeighted(
+        EventDefinition selected = selectWeighted(
                 allEvents,
                 lastEvent
         );
 
-        if (first == null) {
+        if (selected == null) {
             return;
         }
 
-        boolean firstStarted = startEvent(player, first);
+        boolean started = startEvent(player, selected);
 
-        if (!firstStarted) {
-            return;
-        }
-
-        LAST_EVENT.put(playerId, first.id());
-
-        // Второе событие возможно только после успешного
-        // запуска первого события.
-        if (first.canCombine()
-                && RANDOM.nextDouble() < COMBINATION_CHANCE) {
-
-            List<EventDefinition> compatible = new ArrayList<>();
-
-            for (EventDefinition definition : allEvents) {
-                if (!definition.id().equals(first.id())
-                        && definition.canCombine()) {
-                    compatible.add(definition);
-                }
-            }
-
-            EventDefinition second = selectWeighted(
-                    compatible,
-                    first.id()
-            );
-
-            if (second != null && startEvent(player, second)) {
-                LAST_EVENT.put(playerId, second.id());
-            }
+        if (started) {
+            LAST_EVENT.put(playerId, selected.id());
         }
     }
 
@@ -247,7 +219,6 @@ public final class ActiveEventManager {
 
             try {
 
-                // Сначала обновляем механику события.
                 if (isNewEvent(definition)) {
                     NewEventHandler.tick(player, definition);
                 } else {
@@ -256,15 +227,12 @@ public final class ActiveEventManager {
 
                 boolean finished = false;
 
-                // Отсчёт времени.
                 if (definition.hasTimeLimit()) {
                     active.remainingTicks--;
 
                     finished = active.remainingTicks <= 0;
                 }
 
-                // Проверка событий, которые завершаются
-                // после смерти существ или выполнения условия.
                 if (!finished && isNewEvent(definition)) {
                     finished = NewEventHandler.isFinished(
                             player,
@@ -313,7 +281,7 @@ public final class ActiveEventManager {
     }
 
     // =====================================================
-    // ЗАВЕРШЕНИЕ ОДНОГО СОБЫТИЯ
+    // ЗАВЕРШЕНИЕ СОБЫТИЯ
     // =====================================================
 
     private static void endEvent(
@@ -398,21 +366,6 @@ public final class ActiveEventManager {
             for (ActiveEvent active : events) {
 
                 try {
-                    /*
-                     * Каждый обработчик сам определяет,
-                     * что нужно очистить при выходе игрока.
-                     *
-                     * Засада разбойников и железный защитник
-                     * удаляют временных существ.
-                     *
-                     * Торговец сохраняет собственный таймер.
-                     *
-                     * Золотое благословение сохраняет
-                     * оставшееся время в PersistentData.
-                     *
-                     * Разоритель и слизни не удаляются:
-                     * их обработчик только прекращает отслеживание.
-                     */
                     endEvent(player, active.definition);
 
                 } catch (RuntimeException exception) {
@@ -427,7 +380,6 @@ public final class ActiveEventManager {
             }
         }
 
-        // Очищаем оставшиеся временные данные обработчиков.
         EventEffectHandler.cleanupPlayer(player);
         NewEventHandler.cleanupPlayer(player);
 

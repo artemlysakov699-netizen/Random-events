@@ -3,7 +3,7 @@ package com.random.events.menu;
 
 import com.random.events.ActiveEventManager;
 import com.random.events.EventDefinition;
-import com.random.events.EventDefinition.EventImpact;
+import com.random.events.EventDefinition.Impact;
 import com.random.events.EventDefinition.EventType;
 import com.random.events.EventRarity;
 import com.random.events.EventRegistry;
@@ -35,7 +35,7 @@ public class EventSelectorMenu extends AbstractContainerMenu {
     private final SimpleContainer menuContainer;
 
     private EventRarity rarityFilter = null;
-    private EventImpact impactFilter = null;
+    private Impact impactFilter = null;
 
     public EventSelectorMenu(
             int containerId,
@@ -84,7 +84,6 @@ public class EventSelectorMenu extends AbstractContainerMenu {
     }
 
     private void createFilterButtons() {
-        // Фильтры редкости.
         setFilterButton(
                 0,
                 Items.COMPASS,
@@ -107,7 +106,6 @@ public class EventSelectorMenu extends AbstractContainerMenu {
             );
         }
 
-        // Фильтры воздействия.
         setFilterButton(
                 7,
                 Items.BOOK,
@@ -120,7 +118,7 @@ public class EventSelectorMenu extends AbstractContainerMenu {
                 8,
                 Items.GOLDEN_APPLE,
                 "Помощь",
-                impactFilter == EventImpact.HELPFUL,
+                impactFilter == Impact.HELPFUL,
                 "Показывать события, полезные игроку."
         );
 
@@ -128,7 +126,7 @@ public class EventSelectorMenu extends AbstractContainerMenu {
                 9,
                 Items.TNT,
                 "Вред",
-                impactFilter == EventImpact.HARMFUL,
+                impactFilter == Impact.HARMFUL,
                 "Показывать опасные и негативные события."
         );
 
@@ -136,11 +134,10 @@ public class EventSelectorMenu extends AbstractContainerMenu {
                 10,
                 Items.PAPER,
                 "Нейтральные",
-                impactFilter == EventImpact.NEUTRAL,
+                impactFilter == Impact.NEUTRAL,
                 "Показывать события с нейтральным или смешанным эффектом."
         );
 
-        // Подсказки о расположении фильтров.
         setInfoButton(
                 11,
                 Items.FILLED_MAP,
@@ -359,7 +356,6 @@ public class EventSelectorMenu extends AbstractContainerMenu {
             return;
         }
 
-        // Фильтры редкости.
         if (slotId >= 0 && slotId <= 6) {
             if (slotId == 0) {
                 rarityFilter = null;
@@ -372,13 +368,12 @@ public class EventSelectorMenu extends AbstractContainerMenu {
             return;
         }
 
-        // Фильтры воздействия.
         if (slotId >= 7 && slotId <= 10) {
             impactFilter = switch (slotId) {
                 case 7 -> null;
-                case 8 -> EventImpact.HELPFUL;
-                case 9 -> EventImpact.HARMFUL;
-                case 10 -> EventImpact.NEUTRAL;
+                case 8 -> Impact.HELPFUL;
+                case 9 -> Impact.HARMFUL;
+                case 10 -> Impact.NEUTRAL;
                 default -> null;
             };
 
@@ -387,7 +382,6 @@ public class EventSelectorMenu extends AbstractContainerMenu {
             return;
         }
 
-        // Информационные кнопки не активируют события.
         if (slotId < EVENT_START_SLOT) {
             return;
         }

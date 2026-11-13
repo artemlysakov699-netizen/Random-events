@@ -1,3 +1,4 @@
+
 package com.random.events.client;
 
 import com.random.events.menu.EventSelectorMenu;
@@ -66,4 +67,4 @@ public class EventSelectorScreen
                 false
         );
     }
-        }
+}
